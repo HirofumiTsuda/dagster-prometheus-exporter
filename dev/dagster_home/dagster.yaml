@@ -1,0 +1,11 @@
+concurrency:
+  pools:
+    granularity: "run"
+  runs:
+    tag_concurrency_limits:
+    - key: "dagster/concurrency_key"
+      value: "heavy_limit"
+      limit: 1
+    - key: "dagster/concurrency_key"
+      value: "failing_limit"
+      limit: 1
