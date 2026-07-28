@@ -1,0 +1,25 @@
+[project]
+name = "dagster-prometheus-exporter"
+version = "0.1.0"
+description = "A python environment used for tests"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dagster>=1.13.15",
+    "dagster-webserver>=1.13.15",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dev"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = []

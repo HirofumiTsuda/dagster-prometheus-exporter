@@ -1,0 +1,34 @@
+{
+    "settings": {
+       "[go]": {
+            "editor.codeActionsOnSave": {
+                "source.organizeImports": "explicit"
+            },
+            "editor.defaultFormatter": "golang.go",
+            "editor.formatOnSave": true
+        },
+        "go.lintTool": "golangci-lint",
+        "go.lintOnSave": "package",
+        "[python]": {
+            "editor.defaultFormatter": "charliermarsh.ruff",
+            "editor.codeActionsOnSave": {
+                "source.fixAll.ruff": "always",
+                "source.organizeImports.ruff": "always"
+            }
+        },
+        "files.exclude": {
+            "**/__pycache__": true,
+            "**/.pytest_cache": true,
+            "**/.ruff_cache": true,
+            "**/.mypy_cache": true,
+            "**/.logs_queue": true,
+            "**/.nux": true,
+            "**/.telemetry": true,
+        }
+    },
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+}

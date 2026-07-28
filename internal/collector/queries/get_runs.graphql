@@ -1,0 +1,22 @@
+query GetRuns($statuses: [RunStatus!], $updatedAfter: Float) {
+  runsOrError(filter: { statuses: $statuses, updatedAfter: $updatedAfter }) {
+    __typename
+    ... on Runs {
+      results {
+        runId
+        jobName
+        status
+        creationTime
+        updateTime
+        endTime
+      }
+    }
+    ... on PythonError {
+      message
+      stack
+    }
+    ... on InvalidPipelineRunsFilterError {
+      message
+    }
+  }
+}
