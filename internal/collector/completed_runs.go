@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ttlcache "github.com/jellydator/ttlcache/v3"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -38,22 +39,54 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		log.Printf("failed to collect active runs from dagster: %v", err)
 		return
 	}
+	type latestRun struct {
+		status  string
+		endTime float64
+	}
+	latest := make(map[JobKey]latestRun)
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	for _, result := range resp.Data.RunsOrError.Results {
+		location := unknownLocationName
+		if result.RepositoryOrigin != nil {
+			location = result.RepositoryOrigin.RepositoryLocationName
+		}
+
+		key := JobKey{JobName: result.JobName, LocationName: location}
+		if current, ok := latest[key]; !ok || result.EndTime > current.endTime {
+			latest[key] = latestRun{status: result.Status, endTime: result.EndTime}
+		}
+
 		if item := c.processedRuns.Get(result.RunId); item != nil {
 			continue
 		}
 
 		c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
 
-		location := unknownLocationName
-		if result.RepositoryOrigin != nil {
-			location = result.RepositoryOrigin.RepositoryLocationName
-		}
-
 		c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
+	}
+
+	lastRunStatus := make(map[JobKey]string, len(latest))
+	for key, run := range latest {
+		lastRunStatus[key] = run.status
+	}
+	c.lastRunStatus = lastRunStatus
+}
+
+func reflectLastRunStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	for key, status := range c.lastRunStatus {
+		ch <- prometheus.MustNewConstMetric(
+			c.lastRunStatusDesc,
+			prometheus.GaugeValue,
+			1,
+			key.JobName,
+			key.LocationName,
+			strings.ToLower(status),
+		)
 	}
 }
 
