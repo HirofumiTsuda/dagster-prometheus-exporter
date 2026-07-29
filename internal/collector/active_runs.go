@@ -54,6 +54,20 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
+	for jobKey := range c.knownJobs {
+		for _, status := range activeStatuses {
+			key := ActiveRunKey{
+				JobName:      jobKey.JobName,
+				LocationName: jobKey.LocationName,
+				Status:       status,
+			}
+			if _, ok := counts[key]; !ok {
+				counts[key] = 0
+			}
+		}
+	}
+
 	c.activeRunsCounts = counts
 }
 

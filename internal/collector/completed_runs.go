@@ -56,3 +56,28 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
 	}
 }
+
+// seedCompletedRunsCounter ensures every known job has a 0-valued series for
+// each completed status, so jobs that have never run show 0 instead of no data.
+// Callers must hold c.mutex.
+func seedCompletedRunsCounter(c *DagsterCollector, known map[JobKey]struct{}) {
+	for key := range known {
+		for _, status := range completedStatuses {
+			c.completedRunsCounter.WithLabelValues(key.JobName, key.LocationName, strings.ToLower(status)).Add(0)
+		}
+	}
+}
+
+// pruneCompletedRunsCounter deletes series for jobs that existed in previous
+// but no longer exist in known, so metrics for removed jobs stop being reported.
+// Callers must hold c.mutex.
+func pruneCompletedRunsCounter(c *DagsterCollector, previous, known map[JobKey]struct{}) {
+	for key := range previous {
+		if _, ok := known[key]; ok {
+			continue
+		}
+		for _, status := range completedStatuses {
+			c.completedRunsCounter.DeleteLabelValues(key.JobName, key.LocationName, strings.ToLower(status))
+		}
+	}
+}
