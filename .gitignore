@@ -56,3 +56,4 @@ dev/dagster_home/.telemetry/
 dev/dagster_home/history/
 dev/dagster_home/schedules/
 dev/dagster_home/storage/
+dev/dagster_home/logs/

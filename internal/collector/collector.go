@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const unknownLocationName = "unknown"
+
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
@@ -19,6 +21,7 @@ type DagsterCollector struct {
 	activeRunsCounts map[ActiveRunKey]int
 	processedRuns    *ttlcache.Cache[string, struct{}]
 	lookbackWindow   time.Duration
+	jobLocations     map[string]string
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {
@@ -43,7 +46,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 		activeRunsDesc: prometheus.NewDesc(
 			"dagster_active_runs",
 			"Number of active runs with each status in Dagster",
-			[]string{"job_name", "status"},
+			[]string{"job_name", "location", "status"},
 			nil,
 		),
 		completedRunsCounter: prometheus.NewCounterVec(
@@ -51,7 +54,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 				Name: "dagster_completed_runs_total",
 				Help: "Total number of Dagster runs by status and job name",
 			},
-			[]string{"job_name", "status"}, // ラベルでジョブ名とステータスを分ける
+			[]string{"job_name", "location", "status"},
 		),
 		processedRuns:  cache,
 		lookbackWindow: lookbackWindow,
