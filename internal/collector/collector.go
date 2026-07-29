@@ -21,7 +21,7 @@ type DagsterCollector struct {
 	activeRunsCounts map[ActiveRunKey]int
 	processedRuns    *ttlcache.Cache[string, struct{}]
 	lookbackWindow   time.Duration
-	jobLocations     map[string]string
+	knownJobs        map[JobKey]struct{}
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {

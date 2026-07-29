@@ -12,5 +12,9 @@ query GetJobsPerLocation {
         }
       }
     }
+    ... on PythonError {
+      message
+      stack
+    }
   }
 }

@@ -5,6 +5,11 @@ import (
 	"log"
 )
 
+type JobKey struct {
+	JobName      string
+	LocationName string
+}
+
 func CollectJobLocations(ctx context.Context, c *DagsterCollector) {
 	req := getJobLocationsRequest()
 
@@ -14,14 +19,19 @@ func CollectJobLocations(ctx context.Context, c *DagsterCollector) {
 		return
 	}
 
-	locations := make(map[string]string)
+	known := make(map[JobKey]struct{})
 	for _, repo := range resp.Data.RepositoriesOrError.Nodes {
 		for _, job := range repo.Jobs {
-			locations[job.Name] = repo.Location.Name
+			known[JobKey{JobName: job.Name, LocationName: repo.Location.Name}] = struct{}{}
 		}
 	}
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.jobLocations = locations
+
+	previous := c.knownJobs
+	c.knownJobs = known
+
+	pruneCompletedRunsCounter(c, previous, known)
+	seedCompletedRunsCounter(c, known)
 }

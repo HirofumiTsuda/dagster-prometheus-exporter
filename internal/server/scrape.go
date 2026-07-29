@@ -8,6 +8,7 @@ import (
 )
 
 func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
+	collector.CollectJobLocations(ctx, c)
 	collector.CollectActiveRuns(ctx, c)
 	collector.CollectCompletedRuns(ctx, c)
 }
