@@ -1,0 +1,16 @@
+query GetJobsPerLocation {
+  repositoriesOrError {
+    __typename
+    ... on RepositoryConnection {
+      nodes {
+        name
+        location {
+          name
+        }
+        jobs {
+          name
+        }
+      }
+    }
+  }
+}

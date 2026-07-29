@@ -59,14 +59,18 @@ func TestGetRuns(t *testing.T) {
 			t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
 		}
 		mockResp := GraphQLRunsResponse{}
-		mockResp.Data.RunsOrError.__typename = "Runs"
+		mockResp.Data.RunsOrError.Typename = "Runs"
 		mockResp.Data.RunsOrError.Results = []struct {
-			RunId        string  `json:"runId"`
-			JobName      string  `json:"jobName"`
-			Status       string  `json:"status"`
-			CreationTime float64 `json:"creationTime"`
-			UpdateTime   float64 `json:"updateTime"`
-			EndTime      float64 `json:"endTime"`
+			RunId            string  `json:"runId"`
+			JobName          string  `json:"jobName"`
+			Status           string  `json:"status"`
+			CreationTime     float64 `json:"creationTime"`
+			UpdateTime       float64 `json:"updateTime"`
+			EndTime          float64 `json:"endTime"`
+			RepositoryOrigin *struct {
+				RepositoryName         string `json:"repositoryName"`
+				RepositoryLocationName string `json:"repositoryLocationName"`
+			} `json:"repositoryOrigin"`
 		}{
 			{
 				RunId:        "run_123",
@@ -75,6 +79,13 @@ func TestGetRuns(t *testing.T) {
 				CreationTime: 1710000000.0,
 				UpdateTime:   1720000000.0,
 				EndTime:      1730000000.0,
+				RepositoryOrigin: &struct {
+					RepositoryName         string `json:"repositoryName"`
+					RepositoryLocationName string `json:"repositoryLocationName"`
+				}{
+					RepositoryName:         "__repository__",
+					RepositoryLocationName: "test_location",
+				},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -98,6 +109,8 @@ func TestGetRuns(t *testing.T) {
 	result := resp.Data.RunsOrError.Results[0]
 	assert.Equal(t, "run_123", result.RunId)
 	assert.Equal(t, "STARTED", result.Status)
+	require.NotNil(t, result.RepositoryOrigin)
+	assert.Equal(t, "test_location", result.RepositoryOrigin.RepositoryLocationName)
 }
 
 func TestGetRunsWithServerError(t *testing.T) {

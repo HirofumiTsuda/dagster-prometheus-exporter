@@ -9,6 +9,10 @@ query GetRuns($statuses: [RunStatus!], $updatedAfter: Float) {
         creationTime
         updateTime
         endTime
+        repositoryOrigin {
+          repositoryName
+          repositoryLocationName
+        }
       }
     }
     ... on PythonError {

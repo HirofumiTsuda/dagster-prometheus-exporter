@@ -13,8 +13,9 @@ var (
 )
 
 type ActiveRunKey struct {
-	JobName string
-	Status  string
+	JobName      string
+	LocationName string
+	Status       string
 }
 
 func getActiveRunsRequest() *GraphQLRequest {
@@ -40,9 +41,14 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
 	counts := make(map[ActiveRunKey]int)
 
 	for _, run := range resp.Data.RunsOrError.Results {
+		location := unknownLocationName
+		if run.RepositoryOrigin != nil {
+			location = run.RepositoryOrigin.RepositoryLocationName
+		}
 		key := ActiveRunKey{
-			JobName: run.JobName,
-			Status:  run.Status,
+			JobName:      run.JobName,
+			LocationName: location,
+			Status:       run.Status,
 		}
 		counts[key]++
 	}
@@ -60,6 +66,7 @@ func reflectActiveRuns(c *DagsterCollector, ch chan<- prometheus.Metric) {
 			prometheus.GaugeValue,
 			float64(count),
 			key.JobName,
+			key.LocationName,
 			strings.ToLower(key.Status),
 		)
 	}

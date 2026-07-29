@@ -48,6 +48,11 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 
 		c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
 
-		c.completedRunsCounter.WithLabelValues(result.JobName, strings.ToLower(result.Status)).Inc()
+		location := unknownLocationName
+		if result.RepositoryOrigin != nil {
+			location = result.RepositoryOrigin.RepositoryLocationName
+		}
+
+		c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
 	}
 }

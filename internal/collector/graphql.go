@@ -21,14 +21,18 @@ type GraphQLRequest struct {
 type GraphQLRunsResponse struct {
 	Data struct {
 		RunsOrError struct {
-			__typename string `json:"__typename"`
+			Typename string `json:"__typename"`
 			Results    []struct {
-				RunId        string  `json:"runId"`
-				JobName      string  `json:"jobName"`
-				Status       string  `json:"status"`
-				CreationTime float64 `json:"creationTime"`
-				UpdateTime   float64 `json:"updateTime"`
-				EndTime      float64 `json:"endTime"`
+				RunId            string  `json:"runId"`
+				JobName          string  `json:"jobName"`
+				Status           string  `json:"status"`
+				CreationTime     float64 `json:"creationTime"`
+				UpdateTime       float64 `json:"updateTime"`
+				EndTime          float64 `json:"endTime"`
+				RepositoryOrigin *struct {
+					RepositoryName         string `json:"repositoryName"`
+					RepositoryLocationName string `json:"repositoryLocationName"`
+				} `json:"repositoryOrigin"`
 			} `json:"results"`
 			Message string   `json:"message"`
 			Stack   []string `json:"stack"`
@@ -84,6 +88,74 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 	}
 
 	var graphQLResp GraphQLRunsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(graphQLResp.Errors) > 0 {
+		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
+	}
+
+	return &graphQLResp, nil
+}
+
+type GraphQLJobLocationsResponse struct {
+	Data struct {
+		RepositoriesOrError struct {
+			Typename string `json:"__typename"`
+			Nodes      []struct {
+				Name     string `json:"name"`
+				Location struct {
+					Name string `json:"name"`
+				} `json:"location"`
+				Jobs []struct {
+					Name string `json:"name"`
+				} `json:"jobs"`
+			} `json:"nodes"`
+			Message string   `json:"message"`
+			Stack   []string `json:"stack"`
+		} `json:"repositoriesOrError"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+//go:embed queries/get_jobs_per_repository.graphql
+var jobLocationsQuery string
+
+func getJobLocationsRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: jobLocationsQuery,
+	}
+}
+
+func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLJobLocationsResponse, error) {
+	jsonBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: timeOut * time.Second,
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var graphQLResp GraphQLJobLocationsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
