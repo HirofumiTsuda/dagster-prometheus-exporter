@@ -12,16 +12,17 @@ import (
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
-	activeRunsGauge      *prometheus.GaugeVec
+	activeRunsDesc       *prometheus.Desc
 	completedRunsCounter *prometheus.CounterVec
 
-	mu             sync.Mutex
-	processedRuns  *ttlcache.Cache[string, struct{}]
-	lookbackWindow time.Duration
+	mutex            sync.Mutex
+	activeRunsCounts map[ActiveRunKey]int
+	processedRuns    *ttlcache.Cache[string, struct{}]
+	lookbackWindow   time.Duration
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {
-	cache := ttlcache.New[string, struct{}](
+	cache := ttlcache.New(
 		ttlcache.WithTTL[string, struct{}](cacheTTL),
 	)
 
@@ -39,12 +40,11 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 	cache := newDagsterCache(ctx, cacheTTL)
 	return &DagsterCollector{
 		dagsterGraphQLEndpoint: dagsterGraphQLEndpoint,
-		activeRunsGauge: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "dagster_active_runs",
-				Help: "Number of active runs with each status in Dagster",
-			},
-			[]string{"status"},
+		activeRunsDesc: prometheus.NewDesc(
+			"dagster_active_runs",
+			"Number of active runs with each status in Dagster",
+			[]string{"job_name", "status"},
+			nil,
 		),
 		completedRunsCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -59,11 +59,11 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 }
 
 func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
-	c.activeRunsGauge.Describe(ch)
+	ch <- c.activeRunsDesc
 	c.completedRunsCounter.Describe(ch)
 }
 
 func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
-	c.activeRunsGauge.Collect(ch)
+	reflectActiveRuns(c, ch)
 	c.completedRunsCounter.Collect(ch)
 }

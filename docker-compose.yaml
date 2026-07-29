@@ -1,0 +1,41 @@
+services:
+  exporter:
+    build:
+      context: .
+      dockerfile: docker/exporter.Dockerfile
+    ports:
+      - "9101:9101"
+    environment:
+      DAGSTER_GRAPHQL_ENDPOINT: http://dagster:3000/graphql
+
+  dagster:
+    build:
+      context: .
+      dockerfile: docker/dagster-dev.Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app
+    ports:
+      - "3000:3000"    
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./dev/prometheus/prometheus.docker.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./dev/grafana/provisioning:/etc/grafana/provisioning
+      - ./dev/grafana/dashboards:/var/lib/grafana/dashboards      
+    environment:      
+        GF_SECURITY_ADMIN_USER: root
+        GF_SECURITY_ADMIN_PASSWORD: passw0rd
+
+volumes:
+  grafana-storage:

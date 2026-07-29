@@ -9,7 +9,7 @@ import (
 
 type Config struct {
 	Port                    int
-	DagsterURL              string
+	DagsterGraphQLEndpoint  string
 	LookbackWindow          time.Duration
 	CacheTTL                time.Duration
 	DagsterScrapingInterval time.Duration
@@ -27,9 +27,9 @@ func Load() (*Config, error) {
 		port = p
 	}
 
-	dagsterURL := os.Getenv("DAGSTER_URL")
-	if dagsterURL == "" {
-		dagsterURL = "http://127.0.0.1:3000/"
+	dagsterGraphQLEndpoint := os.Getenv("DAGSTER_GRAPHQL_ENDPOINT")
+	if dagsterGraphQLEndpoint == "" {
+		dagsterGraphQLEndpoint = "http://127.0.0.1:3000/graphql"
 	}
 
 	lookbackWindowMinutes := 12 * 60
@@ -64,7 +64,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Port:                    port,
-		DagsterURL:              dagsterURL,
+		DagsterGraphQLEndpoint:  dagsterGraphQLEndpoint,
 		LookbackWindow:          lookbackWindow,
 		CacheTTL:                cacheTTL,
 		DagsterScrapingInterval: dagsterScrapingInterval,

@@ -49,3 +49,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+
+# repository specific rules
+dev/dagster_home/.nux/
+dev/dagster_home/.telemetry/
+dev/dagster_home/history/
+dev/dagster_home/schedules/
+dev/dagster_home/storage/

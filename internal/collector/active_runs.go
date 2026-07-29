@@ -3,11 +3,19 @@ package collector
 import (
 	"context"
 	"log"
+	"strings"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
 	activeStatuses = []string{"QUEUED", "STARTING", "STARTED"}
 )
+
+type ActiveRunKey struct {
+	JobName string
+	Status  string
+}
 
 func getActiveRunsRequest() *GraphQLRequest {
 	variables := map[string]interface{}{
@@ -29,16 +37,30 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
 		return
 	}
 
-	statusCounts := make(map[string]int)
-	for _, status := range activeStatuses {
-		statusCounts[status] = 0
-	}
+	counts := make(map[ActiveRunKey]int)
 
 	for _, run := range resp.Data.RunsOrError.Results {
-		statusCounts[run.Status]++
+		key := ActiveRunKey{
+			JobName: run.JobName,
+			Status:  run.Status,
+		}
+		counts[key]++
 	}
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.activeRunsCounts = counts
+}
 
-	for status, count := range statusCounts {
-		c.activeRunsGauge.WithLabelValues(status).Set(float64(count))
+func reflectActiveRuns(c *DagsterCollector, ch chan<- prometheus.Metric) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	for key, count := range c.activeRunsCounts {
+		ch <- prometheus.MustNewConstMetric(
+			c.activeRunsDesc,
+			prometheus.GaugeValue,
+			float64(count),
+			key.JobName,
+			strings.ToLower(key.Status),
+		)
 	}
 }

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "dagster"
+    orgId: 1
+    folder: "Dagster"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

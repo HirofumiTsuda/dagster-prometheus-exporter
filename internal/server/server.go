@@ -7,28 +7,21 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func getDagsterGraphQLEndpoint(dagsterURL string) string {
-	cleanDagsterURL := strings.TrimRight(dagsterURL, "/")
-	return fmt.Sprintf("%s/graphql", cleanDagsterURL)
-}
-
 func RunServer(ctx context.Context, config *config.Config) {
-	dagsterGraphQLEndpoint := getDagsterGraphQLEndpoint(config.DagsterURL)
 	portSuffix := fmt.Sprintf(":%d", config.Port)
-	c := collector.NewDagsterCollector(ctx, dagsterGraphQLEndpoint, config.LookbackWindow, config.CacheTTL)
+	c := collector.NewDagsterCollector(ctx, config.DagsterGraphQLEndpoint, config.LookbackWindow, config.CacheTTL)
 	prometheus.MustRegister(c)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.Handle("/readyz", newReadyzHandler(ctx, dagsterGraphQLEndpoint))
+	mux.Handle("/readyz", newReadyzHandler(ctx, config.DagsterGraphQLEndpoint))
 
 	srv := &http.Server{
 		Addr:    portSuffix,

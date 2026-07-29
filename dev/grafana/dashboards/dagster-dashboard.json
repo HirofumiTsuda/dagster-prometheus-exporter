@@ -1,0 +1,132 @@
+{
+  "title": "Dagster Run Monitoring",
+  "tags": [
+    "dagster",
+    "prometheus"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {
+      "title": "Active Runs",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(dagster_active_runs)",
+          "legendFormat": "active"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Failed Runs (last 1h)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "round(sum(increase(dagster_completed_runs_total{status=\"failure\"}[1h])))",
+          "legendFormat": "failed"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      }
+    },
+    {
+      "title": "Runs in Queue Total",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(dagster_active_runs{status=\"queued\"})",
+          "legendFormat": "success"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "title": "Completed Runs Total",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(dagster_completed_runs_total{status=\"success\"})",
+          "legendFormat": "success"
+        },
+        {
+          "expr": "sum(dagster_completed_runs_total{status=\"failure\"})",
+          "legendFormat": "failure"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      }
+    },
+    {
+      "title": "Active Runs by Job and Status",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_active_runs",
+          "legendFormat": "{{job_name}} {{status}}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "title": "Completed Runs by Job and Status",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_completed_runs_total",
+          "legendFormat": "{{job_name}} {{status}}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      }
+    },
+    {
+      "title": "Failed Runs (last 5m)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by(job_name)(increase(dagster_completed_runs_total{status=\"failure\"}[5m]))",
+          "legendFormat": "{{job_name}}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  }
+}

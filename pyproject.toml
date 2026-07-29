@@ -16,6 +16,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["dev"]
 
+[tool.dagster]
+module_name = "dev.dagster_workspace.definitions"
+code_location_name = "dev-dagster-workspace"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100

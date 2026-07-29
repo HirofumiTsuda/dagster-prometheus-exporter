@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	ttlcache "github.com/jellydator/ttlcache/v3"
@@ -37,8 +38,8 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		log.Printf("failed to collect active runs from dagster: %v", err)
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 
 	for _, result := range resp.Data.RunsOrError.Results {
 		if item := c.processedRuns.Get(result.RunId); item != nil {
@@ -47,6 +48,6 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 
 		c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
 
-		c.completedRunsCounter.WithLabelValues(result.JobName, result.Status).Inc()
+		c.completedRunsCounter.WithLabelValues(result.JobName, strings.ToLower(result.Status)).Inc()
 	}
 }
