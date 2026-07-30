@@ -7,8 +7,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
+
+// closeBody closes an HTTP response body, discarding the error. By this
+// point the response has already been read (or the caller is bailing out),
+// so there's nothing actionable to do with a close failure — this just
+// keeps that intentional discard out of every call site.
+func closeBody(body io.Closer) {
+	_ = body.Close()
+}
 
 type GraphQLRequest struct {
 	Query     string                 `json:"query"`
@@ -120,7 +129,7 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -188,7 +197,7 @@ func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -242,7 +251,7 @@ func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndp
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
