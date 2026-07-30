@@ -9,14 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetActiveRunsRequest(t *testing.T) {
-	reqBody := getActiveRunsRequest()
-	if reqBody.Query == "" {
-		t.Fatal("reqBody.Query must not be empty")
-	}
-	assert.Equal(t, activeStatuses, reqBody.Variables["statuses"])
-}
-
 func TestCollectActiveRunsLocationLabel(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -38,7 +30,7 @@ func TestCollectActiveRunsLocationLabel(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 	CollectActiveRuns(t.Context(), c)
 
 	assert.Equal(t, 1, c.activeRunsCounts[ActiveRunKey{JobName: "job_a", LocationName: "loc_a", Status: "STARTED"}])
@@ -63,7 +55,7 @@ func TestCollectActiveRunsZeroFillsKnownJobs(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 	c.knownJobs = map[JobKey]struct{}{
 		{JobName: "never_run_job", LocationName: "loc_a"}: {},
 	}

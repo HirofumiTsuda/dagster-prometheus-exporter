@@ -14,54 +14,61 @@ var (
 	completedStatuses = []string{"FAILURE", "SUCCESS"}
 )
 
-func getCompletedRunsRequest(updatedAfter float64) *GraphQLRequest {
-	variables := map[string]interface{}{
-		"statuses":     completedStatuses,
-		"updatedAfter": updatedAfter,
-	}
-	return &GraphQLRequest{
-		Query:     runsQuery,
-		Variables: variables,
-	}
-}
-
 func getUpdatedAfter(base time.Time, lookbackWindow time.Duration) float64 {
 	return float64(base.Add(-lookbackWindow).Unix())
 }
 
 func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
-	now := time.Now()
-	updatedAfter := getUpdatedAfter(now, c.lookbackWindow)
-	req := getCompletedRunsRequest(updatedAfter)
+	c.mutex.Lock()
+	lastSeenUpdateTime := c.lastSeenUpdateTime
+	c.mutex.Unlock()
 
-	resp, err := getRuns(ctx, req, c.dagsterGraphQLEndpoint)
+	updatedAfter := getUpdatedAfter(time.Now(), c.lookbackWindow)
+	if lastSeenUpdateTime > 0 {
+		updatedAfter = lastSeenUpdateTime - c.runsUpdatedAfterSafetyMargin.Seconds()
+	}
+
+	var maxUpdateTimeSeen float64
+
+	err := fetchRunPages(ctx, completedStatuses, updatedAfter, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+
+		for _, result := range page {
+			if result.UpdateTime > maxUpdateTimeSeen {
+				maxUpdateTimeSeen = result.UpdateTime
+			}
+
+			location := unknownLocationName
+			if result.RepositoryOrigin != nil {
+				location = result.RepositoryOrigin.RepositoryLocationName
+			}
+
+			key := JobKey{JobName: result.JobName, LocationName: location}
+			if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
+				c.lastRunStatus[key] = lastRunEntry{status: result.Status, endTime: result.EndTime}
+			}
+
+			if item := c.processedRuns.Get(result.RunId); item != nil {
+				continue
+			}
+
+			c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
+
+			c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
+			c.trackedCompletedRunKeys[key] = struct{}{}
+		}
+		return nil
+	})
 	if err != nil {
-		log.Printf("failed to collect active runs from dagster: %v", err)
+		log.Printf("failed to collect completed runs from dagster: %v", err)
 		return
 	}
 
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	for _, result := range resp.Data.RunsOrError.Results {
-		location := unknownLocationName
-		if result.RepositoryOrigin != nil {
-			location = result.RepositoryOrigin.RepositoryLocationName
-		}
-
-		key := JobKey{JobName: result.JobName, LocationName: location}
-		if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
-			c.lastRunStatus[key] = lastRunEntry{status: result.Status, endTime: result.EndTime}
-		}
-
-		if item := c.processedRuns.Get(result.RunId); item != nil {
-			continue
-		}
-
-		c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
-
-		c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
-		c.trackedCompletedRunKeys[key] = struct{}{}
+	if maxUpdateTimeSeen > lastSeenUpdateTime {
+		c.mutex.Lock()
+		c.lastSeenUpdateTime = maxUpdateTimeSeen
+		c.mutex.Unlock()
 	}
 }
 

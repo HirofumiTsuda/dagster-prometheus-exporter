@@ -15,7 +15,7 @@ import (
 
 func RunServer(ctx context.Context, config *config.Config) {
 	portSuffix := fmt.Sprintf(":%d", config.Port)
-	c := collector.NewDagsterCollector(ctx, config.DagsterGraphQLEndpoint, config.LookbackWindow, config.CacheTTL)
+	c := collector.NewDagsterCollector(ctx, config.DagsterGraphQLEndpoint, config.LookbackWindow, config.CacheTTL, config.RunsPageSize, config.RunsUpdatedAfterSafetyMargin)
 	prometheus.MustRegister(c)
 
 	mux := http.NewServeMux()

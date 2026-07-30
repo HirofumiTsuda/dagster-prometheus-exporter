@@ -18,40 +18,29 @@ type ActiveRunKey struct {
 	Status       string
 }
 
-func getActiveRunsRequest() *GraphQLRequest {
-	variables := map[string]interface{}{
-		"statuses":     activeStatuses,
-		"updatedAfter": nil,
-	}
-	return &GraphQLRequest{
-		Query:     runsQuery,
-		Variables: variables,
-	}
-}
-
 func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
-	req := getActiveRunsRequest()
+	counts := make(map[ActiveRunKey]int)
 
-	resp, err := getRuns(ctx, req, c.dagsterGraphQLEndpoint)
+	err := fetchRunPages(ctx, activeStatuses, 0, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
+		for _, run := range page {
+			location := unknownLocationName
+			if run.RepositoryOrigin != nil {
+				location = run.RepositoryOrigin.RepositoryLocationName
+			}
+			key := ActiveRunKey{
+				JobName:      run.JobName,
+				LocationName: location,
+				Status:       run.Status,
+			}
+			counts[key]++
+		}
+		return nil
+	})
 	if err != nil {
 		log.Printf("failed to collect active runs from dagster: %v", err)
 		return
 	}
 
-	counts := make(map[ActiveRunKey]int)
-
-	for _, run := range resp.Data.RunsOrError.Results {
-		location := unknownLocationName
-		if run.RepositoryOrigin != nil {
-			location = run.RepositoryOrigin.RepositoryLocationName
-		}
-		key := ActiveRunKey{
-			JobName:      run.JobName,
-			LocationName: location,
-			Status:       run.Status,
-		}
-		counts[key]++
-	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
