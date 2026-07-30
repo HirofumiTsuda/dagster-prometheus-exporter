@@ -1,9 +1,38 @@
 # dagster-prometheus-exporter
 
 [![CI](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml)
+[![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
 
 A Prometheus exporter for [Dagster](https://dagster.io/) run metrics. It polls Dagster's GraphQL API on an interval and exposes run counts, statuses, and code-location information as Prometheus metrics.
+
+![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Motivation](#motivation)
+- [Architecture](#architecture)
+- [Metrics](#metrics)
+- [Usage](#usage)
+- [Local development](#local-development)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+## Quick Start
+
+`docker compose up` brings up the entire stack in one shot — a `dagster dev` instance with sample jobs, this exporter, Prometheus, and Grafana with the dashboard above pre-provisioned. No manual setup required.
+
+```sh
+docker compose up --build
+```
+
+| Service | URL | Notes |
+| --- | --- | --- |
+| Dagster UI | http://localhost:3000 | Sample jobs defined in `dev/dagster_workspace/`. |
+| Exporter metrics | http://localhost:9101/metrics | |
+| Prometheus | http://localhost:9090 | Scrapes the exporter using `dev/prometheus/prometheus.docker.yml`. |
+| Grafana | http://localhost:3001 | Login `root` / `passw0rd` (local dev only). Dashboard "Dagster Run Monitoring" is auto-provisioned from `dev/grafana/dashboards/dagster-dashboard.json`. |
 
 ## Motivation
 
@@ -50,6 +79,39 @@ All metrics are labeled with `job_name` and `location` (the Dagster code locatio
 
 The exporter also exposes `/healthz` (process liveness) and `/readyz` (checks connectivity to the Dagster GraphQL endpoint).
 
+### Example output
+
+```
+dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="queued"} 0
+dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="started"} 1
+dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="starting"} 0
+
+dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="failure"} 0
+dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 12
+dagster_completed_runs_total{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 3
+
+dagster_last_run_info{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 1
+dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 1
+```
+
+### PromQL examples
+
+```promql
+# Total active runs across all jobs
+sum(dagster_active_runs)
+
+# Failed runs in the last hour, by job
+sum by (job_name) (increase(dagster_completed_runs_total{status="failure"}[1h]))
+
+# Success rate over the last 5 minutes
+sum(rate(dagster_completed_runs_total{status="success"}[5m]))
+/
+sum(rate(dagster_completed_runs_total[5m]))
+
+# Jobs whose last run failed
+dagster_last_run_info{status="failure"}
+```
+
 ## Usage
 
 Build and run the binary directly:
@@ -82,22 +144,17 @@ All configuration is via environment variables (see `internal/config/config.go`)
 
 ## Local development
 
-`docker-compose.yaml` spins up a full local stack for trying the exporter end-to-end: a `dagster dev` instance with sample jobs (`dev/dagster_workspace/`), the exporter itself, Prometheus, and Grafana (with a pre-provisioned dashboard).
-
-```sh
-docker compose up --build
-```
-
-| Service | URL | Notes |
-| --- | --- | --- |
-| Dagster UI | http://localhost:3000 | Sample jobs defined in `dev/dagster_workspace/`. |
-| Exporter metrics | http://localhost:9101/metrics | |
-| Prometheus | http://localhost:9090 | Scrapes the exporter using `dev/prometheus/prometheus.docker.yml`. |
-| Grafana | http://localhost:3001 | Login `root` / `passw0rd` (local dev only). Dashboard "Dagster Run Monitoring" is auto-provisioned from `dev/grafana/dashboards/dagster-dashboard.json`. |
-
-![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
+See [Quick Start](#quick-start) to bring up the full stack via `docker compose up --build`.
 
 If you're running the exporter directly on the host (not via `docker compose`) against the Dockerized Dagster/Prometheus stack, use `dev/prometheus/prometheus.host.yml` instead, which scrapes the host via its Docker bridge IP.
+
+### Importing the dashboard manually
+
+If you already have your own Grafana/Prometheus and just want the dashboard, import the JSON directly:
+
+1. In Grafana, go to **Dashboards → New → Import**.
+2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json).
+3. Point it at a Prometheus data source that's scraping this exporter.
 
 ### Running tests
 
@@ -109,6 +166,18 @@ go test ./...
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull request.
+
+## Roadmap
+
+- [x] Active runs
+- [x] Completed runs (seeded for idle jobs, pruned for removed jobs)
+- [x] Per-code-location labeling
+- [x] Latest run status
+- [ ] Run duration (latest completed, and longest-running active run per job)
+- [ ] Exporter self-health metrics (scrape duration/errors)
+- [ ] Schedule tick status
+- [ ] Sensor / asset materialization metrics
+- [ ] Published container image / tagged release
 
 ## License
 
