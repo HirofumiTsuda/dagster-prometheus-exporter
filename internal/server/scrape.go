@@ -13,13 +13,19 @@ func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
 	collector.CollectCompletedRuns(ctx, c)
 }
 
+func scrapeDagsterWithTimeout(ctx context.Context, c *collector.DagsterCollector, timeout time.Duration) {
+	scrapeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	scrapeDagster(scrapeCtx, c)
+}
+
 func startScrape(ctx context.Context, c *collector.DagsterCollector, interval time.Duration, timeout time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	log.Printf("Starting background scraper (interval: %v)...", interval)
 
-	scrapeDagster(ctx, c)
+	scrapeDagsterWithTimeout(ctx, c, timeout)
 
 	for {
 		select {
@@ -29,11 +35,7 @@ func startScrape(ctx context.Context, c *collector.DagsterCollector, interval ti
 			return
 
 		case <-ticker.C:
-			func() {
-				scrapeCtx, cancel := context.WithTimeout(ctx, timeout)
-				defer cancel()
-				scrapeDagster(scrapeCtx, c)
-			}()
+			scrapeDagsterWithTimeout(ctx, c, timeout)
 		}
 	}
 }

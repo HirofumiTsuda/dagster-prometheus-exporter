@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 )
 
-func newReadyzHandler(ctx context.Context, dagsterGraphQLEndpoint string) http.Handler {
+func newReadyzHandler(dagsterGraphQLEndpoint string, timeout time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+
 		req := collector.GetVersionRequest()
 
 		resp, err := collector.GetVersion(ctx, req, dagsterGraphQLEndpoint)

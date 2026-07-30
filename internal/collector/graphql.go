@@ -8,10 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 )
-
-const timeOut = 10
 
 type GraphQLRequest struct {
 	Query     string                 `json:"query"`
@@ -74,9 +71,9 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: timeOut * time.Second,
-	}
+	// Timeout is intentionally not set here: the caller controls how long a
+	// request may run via ctx (see http.NewRequestWithContext above).
+	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
@@ -142,9 +139,9 @@ func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: timeOut * time.Second,
-	}
+	// Timeout is intentionally not set here: the caller controls how long a
+	// request may run via ctx (see http.NewRequestWithContext above).
+	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
@@ -196,9 +193,9 @@ func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndp
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: timeOut * time.Second,
-	}
+	// Timeout is intentionally not set here: the caller controls how long a
+	// request may run via ctx (see http.NewRequestWithContext above).
+	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)

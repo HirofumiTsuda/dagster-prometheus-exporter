@@ -1,10 +1,12 @@
 package collector
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -111,6 +113,33 @@ func TestGetRuns(t *testing.T) {
 	assert.Equal(t, "STARTED", result.Status)
 	require.NotNil(t, result.RepositoryOrigin)
 	assert.Equal(t, "test_location", result.RepositoryOrigin.RepositoryLocationName)
+}
+
+func TestGetRunsRespectsContextTimeout(t *testing.T) {
+	unblock := make(chan struct{})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a Dagster instance that never responds in time. There is
+		// no http.Client-level Timeout anymore (see graphql.go) — ctx must
+		// be the only thing that can end this request.
+		<-unblock
+	}))
+	// unblock must be closed before ts.Close(), since Close() waits for the
+	// in-flight handler above to return.
+	defer ts.Close()
+	defer close(unblock)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	req := getRunsRequest(nil, 0.0)
+
+	start := time.Now()
+	_, err := getRuns(ctx, req, ts.URL)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.Less(t, elapsed, 2*time.Second, "request should have been cancelled by the context deadline, not left to hang")
 }
 
 func TestGetRunsWithServerError(t *testing.T) {
