@@ -21,7 +21,7 @@ func RunServer(ctx context.Context, config *config.Config) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.Handle("/readyz", newReadyzHandler(ctx, config.DagsterGraphQLEndpoint))
+	mux.Handle("/readyz", newReadyzHandler(config.DagsterGraphQLEndpoint, config.DagsterScrapingTimeout))
 
 	srv := &http.Server{
 		Addr:    portSuffix,

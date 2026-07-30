@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestNewReadyzHandlerSuccess(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := newReadyzHandler(t.Context(), ts.URL)
+	handler := newReadyzHandler(ts.URL, time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
@@ -41,13 +42,36 @@ func TestNewReadyzHandlerSuccess(t *testing.T) {
 	assert.JSONEq(t, `{"status":"OK","version":"1.2.3"}`, rec.Body.String())
 }
 
+func TestNewReadyzHandlerTimesOutOnSlowDagster(t *testing.T) {
+	unblock := make(chan struct{})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-unblock
+	}))
+	// unblock must be closed before ts.Close(), since Close() waits for the
+	// in-flight handler above to return.
+	defer ts.Close()
+	defer close(unblock)
+
+	handler := newReadyzHandler(ts.URL, 50*time.Millisecond)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+
+	start := time.Now()
+	handler.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Less(t, elapsed, 2*time.Second, "handler should have been bounded by its own timeout, not hung on a slow Dagster")
+}
+
 func TestNewReadyzHandlerFailure(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ts.Close()
 
-	handler := newReadyzHandler(t.Context(), ts.URL)
+	handler := newReadyzHandler(ts.URL, time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
