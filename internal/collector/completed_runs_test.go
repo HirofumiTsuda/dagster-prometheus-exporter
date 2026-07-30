@@ -38,7 +38,7 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
 	CollectCompletedRuns(t.Context(), c)
 
-	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}])
+	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
 
 	ch := make(chan prometheus.Metric, 8)
 	go func() {
@@ -61,6 +61,67 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 		labels[l.GetName()] = l.GetValue()
 	}
 	assert.Equal(t, "success", labels["status"])
+}
+
+func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
+	call := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		body := `{
+			"data": {
+				"runsOrError": {
+					"__typename": "Runs",
+					"results": [
+						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
+					]
+				}
+			}
+		}`
+		if call > 1 {
+			// Simulate the run aging out of the completed-runs lookback window:
+			// the query now returns no results at all.
+			body = `{
+				"data": {
+					"runsOrError": {
+						"__typename": "Runs",
+						"results": []
+					}
+				}
+			}`
+		}
+
+		_, err := w.Write([]byte(body))
+		if err != nil {
+			t.Fatalf("failed to write mock response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+
+	CollectCompletedRuns(t.Context(), c)
+	require.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
+
+	CollectCompletedRuns(t.Context(), c)
+	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status,
+		"last known status should survive a scrape with no completed runs in range")
+}
+
+func TestPruneLastRunStatus(t *testing.T) {
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour)
+
+	goneKey := JobKey{JobName: "gone_job", LocationName: "loc_a"}
+	stillHereKey := JobKey{JobName: "job_a", LocationName: "loc_a"}
+	c.lastRunStatus[goneKey] = lastRunEntry{status: "SUCCESS", endTime: 100}
+	c.lastRunStatus[stillHereKey] = lastRunEntry{status: "FAILURE", endTime: 100}
+
+	pruneLastRunStatus(c, map[JobKey]struct{}{stillHereKey: {}})
+
+	assert.NotContains(t, c.lastRunStatus, goneKey)
+	assert.Contains(t, c.lastRunStatus, stillHereKey)
 }
 
 func TestSeedCompletedRunsCounter(t *testing.T) {
@@ -88,7 +149,7 @@ func TestPruneCompletedRunsCounter(t *testing.T) {
 	known := map[JobKey]struct{}{}
 
 	seedCompletedRunsCounter(c, previous)
-	pruneCompletedRunsCounter(c, previous, known)
+	pruneCompletedRunsCounter(c, known)
 
 	ch := make(chan prometheus.Metric, 8)
 	go func() {
@@ -101,6 +162,60 @@ func TestPruneCompletedRunsCounter(t *testing.T) {
 		count++
 	}
 	assert.Equal(t, 0, count, "expected no series to remain for a pruned job")
+}
+
+func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) {
+	// Regression test: a run whose repositoryOrigin recorded an old location
+	// name (e.g. an auto-generated grpc name from before location_name was
+	// pinned) must not linger in dagster_completed_runs_total forever just
+	// because that (job, location) pair never appears in the live roster.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(`{
+			"data": {
+				"runsOrError": {
+					"__typename": "Runs",
+					"results": [
+						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "old.module.path"}}
+					]
+				}
+			}
+		}`))
+		if err != nil {
+			t.Fatalf("failed to write mock response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	CollectCompletedRuns(t.Context(), c)
+
+	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "old.module.path", "success")
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), testutil.ToFloat64(metric))
+
+	// The live roster now reports "job_a" under a renamed, pinned location.
+	known := map[JobKey]struct{}{
+		{JobName: "job_a", LocationName: "current-location"}: {},
+	}
+	pruneCompletedRunsCounter(c, known)
+
+	ch := make(chan prometheus.Metric, 8)
+	go func() {
+		c.completedRunsCounter.Collect(ch)
+		close(ch)
+	}()
+
+	for m := range ch {
+		var dm dto.Metric
+		require.NoError(t, m.Write(&dm))
+		for _, l := range dm.GetLabel() {
+			if l.GetName() == "location" {
+				assert.NotEqual(t, "old.module.path", l.GetValue(), "stale location series should have been pruned")
+			}
+		}
+	}
 }
 
 func TestCollectJobLocationsSeedsAndPrunes(t *testing.T) {

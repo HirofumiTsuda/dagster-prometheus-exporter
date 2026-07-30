@@ -39,11 +39,6 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		log.Printf("failed to collect active runs from dagster: %v", err)
 		return
 	}
-	type latestRun struct {
-		status  string
-		endTime float64
-	}
-	latest := make(map[JobKey]latestRun)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -55,8 +50,8 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		}
 
 		key := JobKey{JobName: result.JobName, LocationName: location}
-		if current, ok := latest[key]; !ok || result.EndTime > current.endTime {
-			latest[key] = latestRun{status: result.Status, endTime: result.EndTime}
+		if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
+			c.lastRunStatus[key] = lastRunEntry{status: result.Status, endTime: result.EndTime}
 		}
 
 		if item := c.processedRuns.Get(result.RunId); item != nil {
@@ -66,27 +61,41 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
 
 		c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
+		c.trackedCompletedRunKeys[key] = struct{}{}
 	}
+}
 
-	lastRunStatus := make(map[JobKey]string, len(latest))
-	for key, run := range latest {
-		lastRunStatus[key] = run.status
-	}
-	c.lastRunStatus = lastRunStatus
+// lastRunEntry tracks the status of the most recently completed run seen so
+// far for a job, so dagster_last_run_info keeps reporting it even after the
+// run falls outside the completed-runs lookback window.
+type lastRunEntry struct {
+	status  string
+	endTime float64
 }
 
 func reflectLastRunStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	for key, status := range c.lastRunStatus {
+	for key, entry := range c.lastRunStatus {
 		ch <- prometheus.MustNewConstMetric(
 			c.lastRunStatusDesc,
 			prometheus.GaugeValue,
 			1,
 			key.JobName,
 			key.LocationName,
-			strings.ToLower(status),
+			strings.ToLower(entry.status),
 		)
+	}
+}
+
+// pruneLastRunStatus deletes cached last-run status for jobs that no longer
+// exist, so dagster_last_run_info doesn't keep reporting stale entries
+// forever for removed jobs. Callers must hold c.mutex.
+func pruneLastRunStatus(c *DagsterCollector, known map[JobKey]struct{}) {
+	for key := range c.lastRunStatus {
+		if _, ok := known[key]; !ok {
+			delete(c.lastRunStatus, key)
+		}
 	}
 }
 
@@ -98,19 +107,24 @@ func seedCompletedRunsCounter(c *DagsterCollector, known map[JobKey]struct{}) {
 		for _, status := range completedStatuses {
 			c.completedRunsCounter.WithLabelValues(key.JobName, key.LocationName, strings.ToLower(status)).Add(0)
 		}
+		c.trackedCompletedRunKeys[key] = struct{}{}
 	}
 }
 
-// pruneCompletedRunsCounter deletes series for jobs that existed in previous
-// but no longer exist in known, so metrics for removed jobs stop being reported.
+// pruneCompletedRunsCounter deletes every tracked (job, location) series that
+// isn't in known. This covers both jobs removed from Dagster and runs whose
+// repositoryOrigin recorded a location name (e.g. an old, since-renamed
+// auto-generated grpc location name) that never matches a live location, so
+// those don't linger in dagster_completed_runs_total forever.
 // Callers must hold c.mutex.
-func pruneCompletedRunsCounter(c *DagsterCollector, previous, known map[JobKey]struct{}) {
-	for key := range previous {
+func pruneCompletedRunsCounter(c *DagsterCollector, known map[JobKey]struct{}) {
+	for key := range c.trackedCompletedRunKeys {
 		if _, ok := known[key]; ok {
 			continue
 		}
 		for _, status := range completedStatuses {
 			c.completedRunsCounter.DeleteLabelValues(key.JobName, key.LocationName, strings.ToLower(status))
 		}
+		delete(c.trackedCompletedRunKeys, key)
 	}
 }
