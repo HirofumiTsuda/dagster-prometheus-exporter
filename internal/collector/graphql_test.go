@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,24 +17,30 @@ func TestGetRunsRequest(t *testing.T) {
 	tests := []struct {
 		statuses             []string
 		updatedAfter         float64
+		cursor               string
+		limit                int
 		expectedUpdatedAfter float64
 	}{
 		{
 			statuses:             []string{"SUCCESS", "FAILED"},
 			updatedAfter:         1000000,
+			cursor:               "run_abc",
+			limit:                500,
 			expectedUpdatedAfter: 1000000,
 		},
 	}
 
 	for _, tc := range tests {
-		req := getRunsRequest(tc.statuses, tc.updatedAfter)
+		req := getRunsRequest(tc.statuses, tc.updatedAfter, tc.cursor, tc.limit)
 		assert.Equal(t, req.Variables["statuses"], tc.statuses)
 		assert.Equal(t, req.Variables["updatedAfter"], tc.expectedUpdatedAfter)
+		assert.Equal(t, req.Variables["cursor"], tc.cursor)
+		assert.Equal(t, req.Variables["limit"], tc.limit)
 		assert.Contains(t, req.Query, "query")
 	}
 }
 
-func TestGetRunsRequestWithNilUpdatedAfter(t *testing.T) {
+func TestGetRunsRequestWithNilUpdatedAfterAndCursor(t *testing.T) {
 	tests := []struct {
 		statuses     []string
 		updatedAfter float64
@@ -45,9 +52,10 @@ func TestGetRunsRequestWithNilUpdatedAfter(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		req := getRunsRequest(tc.statuses, tc.updatedAfter)
+		req := getRunsRequest(tc.statuses, tc.updatedAfter, "", 500)
 		assert.Equal(t, req.Variables["statuses"], tc.statuses)
 		assert.Nil(t, req.Variables["updatedAfter"])
+		assert.Nil(t, req.Variables["cursor"])
 		assert.Contains(t, req.Query, "query")
 	}
 }
@@ -62,18 +70,7 @@ func TestGetRuns(t *testing.T) {
 		}
 		mockResp := GraphQLRunsResponse{}
 		mockResp.Data.RunsOrError.Typename = "Runs"
-		mockResp.Data.RunsOrError.Results = []struct {
-			RunId            string  `json:"runId"`
-			JobName          string  `json:"jobName"`
-			Status           string  `json:"status"`
-			CreationTime     float64 `json:"creationTime"`
-			UpdateTime       float64 `json:"updateTime"`
-			EndTime          float64 `json:"endTime"`
-			RepositoryOrigin *struct {
-				RepositoryName         string `json:"repositoryName"`
-				RepositoryLocationName string `json:"repositoryLocationName"`
-			} `json:"repositoryOrigin"`
-		}{
+		mockResp.Data.RunsOrError.Results = []Run{
 			{
 				RunId:        "run_123",
 				JobName:      "test_job",
@@ -81,10 +78,7 @@ func TestGetRuns(t *testing.T) {
 				CreationTime: 1710000000.0,
 				UpdateTime:   1720000000.0,
 				EndTime:      1730000000.0,
-				RepositoryOrigin: &struct {
-					RepositoryName         string `json:"repositoryName"`
-					RepositoryLocationName string `json:"repositoryLocationName"`
-				}{
+				RepositoryOrigin: &RunRepositoryOrigin{
 					RepositoryName:         "__repository__",
 					RepositoryLocationName: "test_location",
 				},
@@ -99,7 +93,7 @@ func TestGetRuns(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	req := getRunsRequest([]string{"STARTED"}, 0.0)
+	req := getRunsRequest([]string{"STARTED"}, 0.0, "", 500)
 
 	resp, err := getRuns(t.Context(), req, ts.URL)
 
@@ -132,7 +126,7 @@ func TestGetRunsRespectsContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
-	req := getRunsRequest(nil, 0.0)
+	req := getRunsRequest(nil, 0.0, "", 500)
 
 	start := time.Now()
 	_, err := getRuns(ctx, req, ts.URL)
@@ -148,9 +142,64 @@ func TestGetRunsWithServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	req := getRunsRequest(nil, 0.0)
+	req := getRunsRequest(nil, 0.0, "", 500)
 	response, err := getRuns(t.Context(), req, ts.URL)
 
 	assert.Error(t, err)
 	assert.Nil(t, response)
+}
+
+// makeRunsPage builds n runs named run_<offset>..run_<offset+n-1>, for use
+// as a canned page of results in the fake server below.
+func makeRunsPage(offset, n int) []Run {
+	runs := make([]Run, n)
+	for i := range n {
+		runs[i] = Run{RunId: fmt.Sprintf("run_%d", offset+i), JobName: "job_a", Status: "SUCCESS"}
+	}
+	return runs
+}
+
+func TestFetchRunPagesPaginatesUntilAShortPage(t *testing.T) {
+	const pageSize = 3
+	pages := [][]Run{
+		makeRunsPage(0, pageSize), // full page: expect another request
+		makeRunsPage(3, pageSize), // full page: expect another request
+		makeRunsPage(6, 1),        // short page: this must be the last request
+	}
+
+	var seenCursors []string
+	call := 0
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		if cursor, ok := req.Variables["cursor"]; ok && cursor != nil {
+			seenCursors = append(seenCursors, cursor.(string))
+		} else {
+			seenCursors = append(seenCursors, "")
+		}
+
+		require.Less(t, call, len(pages), "fetchRunPages made more requests than expected")
+		mockResp := GraphQLRunsResponse{}
+		mockResp.Data.RunsOrError.Typename = "Runs"
+		mockResp.Data.RunsOrError.Results = pages[call]
+		call++
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(mockResp))
+	}))
+	defer ts.Close()
+
+	var got []Run
+	err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, ts.URL, pageSize, func(page []Run) error {
+		got = append(got, page...)
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, call, "expected exactly 3 page requests (2 full pages + 1 short page)")
+	assert.Len(t, got, 7)
+	assert.Equal(t, []string{"", "run_2", "run_5"}, seenCursors,
+		"each page's cursor should be the runId of the previous page's last result")
 }

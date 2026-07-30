@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,58 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCollectCompletedRunsUsesIncrementalUpdatedAfter(t *testing.T) {
+	var seenUpdatedAfter []float64
+	call := 0
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		if v, ok := req.Variables["updatedAfter"]; ok && v != nil {
+			seenUpdatedAfter = append(seenUpdatedAfter, v.(float64))
+		} else {
+			seenUpdatedAfter = append(seenUpdatedAfter, 0)
+		}
+		call++
+
+		body := `{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`
+		if call == 1 {
+			body = `{
+				"data": {
+					"runsOrError": {
+						"__typename": "Runs",
+						"results": [
+							{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "endTime": 100, "updateTime": 1000}
+						]
+					}
+				}
+			}`
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(body))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	lookback := 2 * time.Hour
+	safetyMargin := 5 * time.Minute
+	c := NewDagsterCollector(t.Context(), ts.URL, lookback, time.Hour, 500, safetyMargin)
+
+	CollectCompletedRuns(t.Context(), c)
+	require.Len(t, seenUpdatedAfter, 1)
+	expectedFirst := getUpdatedAfter(time.Now(), lookback)
+	assert.InDelta(t, expectedFirst, seenUpdatedAfter[0], 5,
+		"first scrape (no watermark yet) should fall back to the lookback window")
+	assert.Equal(t, float64(1000), c.lastSeenUpdateTime, "watermark should advance to the max updateTime seen")
+
+	CollectCompletedRuns(t.Context(), c)
+	require.Len(t, seenUpdatedAfter, 2)
+	assert.Equal(t, float64(1000)-safetyMargin.Seconds(), seenUpdatedAfter[1],
+		"second scrape should use the watermark minus the safety margin, not the full lookback window again")
+}
 
 func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +88,7 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 	CollectCompletedRuns(t.Context(), c)
 
 	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
@@ -100,7 +153,7 @@ func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
 	CollectCompletedRuns(t.Context(), c)
 	require.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
@@ -111,7 +164,7 @@ func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 }
 
 func TestPruneLastRunStatus(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	goneKey := JobKey{JobName: "gone_job", LocationName: "loc_a"}
 	stillHereKey := JobKey{JobName: "job_a", LocationName: "loc_a"}
@@ -125,7 +178,7 @@ func TestPruneLastRunStatus(t *testing.T) {
 }
 
 func TestSeedCompletedRunsCounter(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	known := map[JobKey]struct{}{
 		{JobName: "job_a", LocationName: "loc_a"}: {},
@@ -141,7 +194,7 @@ func TestSeedCompletedRunsCounter(t *testing.T) {
 }
 
 func TestPruneCompletedRunsCounter(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	previous := map[JobKey]struct{}{
 		{JobName: "gone_job", LocationName: "loc_a"}: {},
@@ -188,7 +241,7 @@ func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) 
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 	CollectCompletedRuns(t.Context(), c)
 
 	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "old.module.path", "success")
@@ -253,7 +306,7 @@ func TestCollectJobLocationsSeedsAndPrunes(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
 	CollectJobLocations(t.Context(), c)
 	assert.Contains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})

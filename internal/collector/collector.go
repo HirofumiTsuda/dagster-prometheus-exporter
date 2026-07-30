@@ -18,13 +18,25 @@ type DagsterCollector struct {
 	completedRunsCounter *prometheus.CounterVec
 	lastRunStatusDesc    *prometheus.Desc
 
-	mutex                   sync.Mutex
-	activeRunsCounts        map[ActiveRunKey]int
-	processedRuns           *ttlcache.Cache[string, struct{}]
-	lookbackWindow          time.Duration
-	knownJobs               map[JobKey]struct{}
-	lastRunStatus           map[JobKey]lastRunEntry
-	trackedCompletedRunKeys map[JobKey]struct{}
+	mutex                        sync.Mutex
+	activeRunsCounts             map[ActiveRunKey]int
+	processedRuns                *ttlcache.Cache[string, struct{}]
+	lookbackWindow               time.Duration
+	knownJobs                    map[JobKey]struct{}
+	lastRunStatus                map[JobKey]lastRunEntry
+	trackedCompletedRunKeys      map[JobKey]struct{}
+	lastSeenUpdateTime           float64
+	runsPageSize                 int
+	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
+	// updateTime watermark before it's used as the next scrape's
+	// updatedAfter. A run's updateTime can be set slightly before its write
+	// is actually committed and visible to us, so advancing the watermark
+	// to the exact max we've observed risks permanently skipping a run
+	// whose commit was delayed past that point. Re-fetching this small
+	// overlap window each time is cheap and harmless: processedRuns and
+	// lastRunStatus's newest-wins comparison already make reprocessing an
+	// already-seen run a no-op.
+	runsUpdatedAfterSafetyMargin time.Duration
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {
@@ -42,7 +54,7 @@ func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cach
 	return cache
 }
 
-func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, lookbackWindow time.Duration, cacheTTL time.Duration) *DagsterCollector {
+func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, lookbackWindow time.Duration, cacheTTL time.Duration, runsPageSize int, runsUpdatedAfterSafetyMargin time.Duration) *DagsterCollector {
 	cache := newDagsterCache(ctx, cacheTTL)
 	return &DagsterCollector{
 		dagsterGraphQLEndpoint: dagsterGraphQLEndpoint,
@@ -65,10 +77,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"job_name", "location", "status"},
 			nil,
 		),
-		processedRuns:           cache,
-		lookbackWindow:          lookbackWindow,
-		lastRunStatus:           make(map[JobKey]lastRunEntry),
-		trackedCompletedRunKeys: make(map[JobKey]struct{}),
+		processedRuns:                cache,
+		lookbackWindow:               lookbackWindow,
+		lastRunStatus:                make(map[JobKey]lastRunEntry),
+		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
+		runsPageSize:                 runsPageSize,
+		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
 	}
 }
 

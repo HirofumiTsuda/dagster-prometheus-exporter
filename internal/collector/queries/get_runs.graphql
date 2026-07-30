@@ -1,5 +1,5 @@
-query GetRuns($statuses: [RunStatus!], $updatedAfter: Float) {
-  runsOrError(filter: { statuses: $statuses, updatedAfter: $updatedAfter }) {
+query GetRuns($statuses: [RunStatus!], $updatedAfter: Float, $cursor: String, $limit: Int) {
+  runsOrError(filter: { statuses: $statuses, updatedAfter: $updatedAfter }, cursor: $cursor, limit: $limit) {
     __typename
     ... on Runs {
       results {

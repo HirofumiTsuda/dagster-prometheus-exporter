@@ -23,7 +23,7 @@ func TestScrapeDagsterHonorsContextTimeoutWhenRunningConcurrently(t *testing.T) 
 	defer ts.Close()
 	defer close(unblock)
 
-	c := collector.NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
+	c := collector.NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
 	const ctxTimeout = 50 * time.Millisecond
 	ctx, cancel := context.WithTimeout(t.Context(), ctxTimeout)

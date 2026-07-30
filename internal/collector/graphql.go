@@ -15,24 +15,30 @@ type GraphQLRequest struct {
 	Variables map[string]interface{} `json:"variables,omitempty"`
 }
 
+// RunRepositoryOrigin identifies the code location a Run was launched from,
+// as recorded on the run itself (a launch-time snapshot, not a live lookup).
+type RunRepositoryOrigin struct {
+	RepositoryName         string `json:"repositoryName"`
+	RepositoryLocationName string `json:"repositoryLocationName"`
+}
+
+type Run struct {
+	RunId            string               `json:"runId"`
+	JobName          string               `json:"jobName"`
+	Status           string               `json:"status"`
+	CreationTime     float64              `json:"creationTime"`
+	UpdateTime       float64              `json:"updateTime"`
+	EndTime          float64              `json:"endTime"`
+	RepositoryOrigin *RunRepositoryOrigin `json:"repositoryOrigin"`
+}
+
 type GraphQLRunsResponse struct {
 	Data struct {
 		RunsOrError struct {
-			Typename string `json:"__typename"`
-			Results    []struct {
-				RunId            string  `json:"runId"`
-				JobName          string  `json:"jobName"`
-				Status           string  `json:"status"`
-				CreationTime     float64 `json:"creationTime"`
-				UpdateTime       float64 `json:"updateTime"`
-				EndTime          float64 `json:"endTime"`
-				RepositoryOrigin *struct {
-					RepositoryName         string `json:"repositoryName"`
-					RepositoryLocationName string `json:"repositoryLocationName"`
-				} `json:"repositoryOrigin"`
-			} `json:"results"`
-			Message string   `json:"message"`
-			Stack   []string `json:"stack"`
+			Typename string   `json:"__typename"`
+			Results  []Run    `json:"results"`
+			Message  string   `json:"message"`
+			Stack    []string `json:"stack"`
 		} `json:"runsOrError"`
 	} `json:"data"`
 	Errors []struct {
@@ -43,19 +49,55 @@ type GraphQLRunsResponse struct {
 //go:embed queries/get_runs.graphql
 var runsQuery string
 
-func getRunsRequest(statuses []string, updateAfter float64) *GraphQLRequest {
+func getRunsRequest(statuses []string, updateAfter float64, cursor string, limit int) *GraphQLRequest {
 
 	var updatedAfter interface{} = updateAfter
 	if updateAfter == 0.0 {
 		updatedAfter = nil
 	}
+	var cursorVar interface{} = cursor
+	if cursor == "" {
+		cursorVar = nil
+	}
 	variables := map[string]interface{}{
 		"statuses":     statuses,
 		"updatedAfter": updatedAfter,
+		"cursor":       cursorVar,
+		"limit":        limit,
 	}
 	return &GraphQLRequest{
 		Query:     runsQuery,
 		Variables: variables,
+	}
+}
+
+// fetchRunPages fetches every run matching statuses/updateAfter, paging
+// through runsOrError via cursor and invoking onPage once per page, instead
+// of accumulating every run into memory before returning. The caller is
+// expected to fold each page into its own (much smaller) aggregate state.
+//
+// The cursor Dagster expects is simply the runId of the last run already
+// seen (not an opaque token) — see
+// https://github.com/dagster-io/dagster/issues/31024#issuecomment-5126177124.
+func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, dagsterGraphQLEndpoint string, pageSize int, onPage func([]Run) error) error {
+	cursor := ""
+
+	for {
+		req := getRunsRequest(statuses, updateAfter, cursor, pageSize)
+		resp, err := getRuns(ctx, req, dagsterGraphQLEndpoint)
+		if err != nil {
+			return err
+		}
+
+		results := resp.Data.RunsOrError.Results
+		if err := onPage(results); err != nil {
+			return err
+		}
+
+		if len(results) < pageSize {
+			return nil
+		}
+		cursor = results[len(results)-1].RunId
 	}
 }
 
