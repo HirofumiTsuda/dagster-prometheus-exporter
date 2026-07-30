@@ -18,12 +18,13 @@ type DagsterCollector struct {
 	completedRunsCounter *prometheus.CounterVec
 	lastRunStatusDesc    *prometheus.Desc
 
-	mutex            sync.Mutex
-	activeRunsCounts map[ActiveRunKey]int
-	processedRuns    *ttlcache.Cache[string, struct{}]
-	lookbackWindow   time.Duration
-	knownJobs        map[JobKey]struct{}
-	lastRunStatus    map[JobKey]string
+	mutex                   sync.Mutex
+	activeRunsCounts        map[ActiveRunKey]int
+	processedRuns           *ttlcache.Cache[string, struct{}]
+	lookbackWindow          time.Duration
+	knownJobs               map[JobKey]struct{}
+	lastRunStatus           map[JobKey]lastRunEntry
+	trackedCompletedRunKeys map[JobKey]struct{}
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {
@@ -60,12 +61,14 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 		),
 		lastRunStatusDesc: prometheus.NewDesc(
 			"dagster_last_run_info",
-			"Status of the most recently completed run for a job within the lookback window (value is always 1; status is carried in the status label)",
+			"Status of the most recently completed run for a job (value is always 1; status is carried in the status label)",
 			[]string{"job_name", "location", "status"},
 			nil,
 		),
-		processedRuns:  cache,
-		lookbackWindow: lookbackWindow,
+		processedRuns:           cache,
+		lookbackWindow:          lookbackWindow,
+		lastRunStatus:           make(map[JobKey]lastRunEntry),
+		trackedCompletedRunKeys: make(map[JobKey]struct{}),
 	}
 }
 

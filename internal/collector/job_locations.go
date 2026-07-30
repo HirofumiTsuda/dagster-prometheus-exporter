@@ -29,9 +29,9 @@ func CollectJobLocations(ctx context.Context, c *DagsterCollector) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	previous := c.knownJobs
 	c.knownJobs = known
 
-	pruneCompletedRunsCounter(c, previous, known)
+	pruneCompletedRunsCounter(c, known)
 	seedCompletedRunsCounter(c, known)
+	pruneLastRunStatus(c, known)
 }
