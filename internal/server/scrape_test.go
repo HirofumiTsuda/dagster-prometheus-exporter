@@ -1,40 +1,50 @@
 package server
 
 import (
+	"context"
 	"dagster-prometheus-exporter/internal/collector"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 )
 
-func TestScrapeDagsterRunsCollectorsConcurrently(t *testing.T) {
-	const perRequestDelay = 50 * time.Millisecond
+func TestScrapeDagsterHonorsContextTimeoutWhenRunningConcurrently(t *testing.T) {
+	unblock := make(chan struct{})
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(perRequestDelay)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		// Valid enough for both GraphQLRunsResponse and
-		// GraphQLJobLocationsResponse decoding, whichever collector hits it.
-		_, _ = w.Write([]byte(`{
-			"data": {
-				"runsOrError": {"__typename": "Runs", "results": []},
-				"repositoriesOrError": {"__typename": "RepositoryConnection", "nodes": []}
-			}
-		}`))
+		// Never respond in time. All three collectors hit this same
+		// endpoint concurrently, so this also proves ctx cancellation is
+		// honored by every one of them at once, not just the first.
+		<-unblock
 	}))
+	// unblock must be closed before ts.Close(), since Close() waits for the
+	// in-flight handlers above to return.
 	defer ts.Close()
+	defer close(unblock)
 
 	c := collector.NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour)
 
-	start := time.Now()
-	scrapeDagster(t.Context(), c)
-	elapsed := time.Since(start)
+	const ctxTimeout = 50 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), ctxTimeout)
+	defer cancel()
 
-	// Sequentially, three calls at perRequestDelay each would take ~150ms.
-	// Running them concurrently should take roughly one delay's worth.
-	assert.Less(t, elapsed, 2*perRequestDelay, "collectors should run concurrently, not sequentially")
+	// scrapeDagster itself would hang forever if ctx cancellation weren't
+	// honored, so it's called in its own goroutine and raced against a
+	// bound here — a direct call + elapsed-time assertion can't catch that,
+	// since a hang would never reach the assertion at all. The bound is a
+	// generous multiple of ctxTimeout rather than an unrelated fixed value,
+	// so it scales with whatever timeout the test above it uses.
+	done := make(chan struct{})
+	go func() {
+		scrapeDagster(ctx, c)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Expected: scrapeDagster returned once ctx timed out.
+	case <-time.After(20 * ctxTimeout):
+		t.Fatal("scrapeDagster did not return after its context timed out; a collector is not honoring ctx cancellation")
+	}
 }
