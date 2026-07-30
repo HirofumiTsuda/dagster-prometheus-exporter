@@ -14,6 +14,7 @@ A Prometheus exporter for [Dagster](https://dagster.io/) run metrics. It polls D
 - [Motivation](#motivation)
 - [Architecture](#architecture)
 - [Metrics](#metrics)
+- [Endpoints](#endpoints)
 - [Usage](#usage)
 - [Local development](#local-development)
 - [Roadmap](#roadmap)
@@ -77,8 +78,6 @@ All metrics are labeled with `job_name` and `location` (the Dagster code locatio
 | `dagster_completed_runs_total` | Counter | `job_name`, `location`, `status` | Total number of completed runs (`success`, `failure`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically. |
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
 
-The exporter also exposes `/healthz` (process liveness) and `/readyz` (checks connectivity to the Dagster GraphQL endpoint).
-
 ### Example output
 
 ```
@@ -111,6 +110,14 @@ sum(rate(dagster_completed_runs_total[5m]))
 # Jobs whose last run failed
 dagster_last_run_info{status="failure"}
 ```
+
+## Endpoints
+
+| Endpoint | Purpose | Example response |
+| --- | --- | --- |
+| `GET /metrics` | Prometheus exposition of all metrics above. | See [Example output](#example-output). |
+| `GET /healthz` | Liveness probe. Always returns `200` as long as the process is up — it does not check Dagster connectivity, so it's safe to use for a container/k8s liveness check that shouldn't restart the pod just because Dagster is unreachable. | `200` `{"status":"healthy"}` |
+| `GET /readyz` | Readiness probe. Calls Dagster's GraphQL API and returns `200` only if it responds, `503` otherwise — use this (not `/healthz`) to gate traffic/scrape readiness on Dagster actually being reachable. | `200` `{"status":"OK","version":"1.13.15"}`, or `503` `{"status":"NOT_READY","error":"..."}` |
 
 ## Usage
 
