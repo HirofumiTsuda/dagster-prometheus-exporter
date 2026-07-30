@@ -4,13 +4,30 @@ import (
 	"context"
 	"dagster-prometheus-exporter/internal/collector"
 	"log"
+	"sync"
 	"time"
 )
 
+// scrapeDagster runs the GraphQL-backed collectors concurrently. Each one
+// locks DagsterCollector's own mutex around its critical section, so running
+// them in parallel is safe; doing so bounds the total scrape latency by the
+// slowest single call instead of their sum.
 func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
-	collector.CollectJobLocations(ctx, c)
-	collector.CollectActiveRuns(ctx, c)
-	collector.CollectCompletedRuns(ctx, c)
+	var wg sync.WaitGroup
+
+	spawn := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
+	spawn(func() { collector.CollectJobLocations(ctx, c) })
+	spawn(func() { collector.CollectActiveRuns(ctx, c) })
+	spawn(func() { collector.CollectCompletedRuns(ctx, c) })
+
+	wg.Wait()
 }
 
 func scrapeDagsterWithTimeout(ctx context.Context, c *collector.DagsterCollector, timeout time.Duration) {
