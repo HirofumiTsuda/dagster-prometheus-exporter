@@ -34,16 +34,6 @@ func Load() (*Config, error) {
 		dagsterGraphQLEndpoint = "http://127.0.0.1:3000/graphql"
 	}
 
-	cacheTTLMinutes := 24 * 60
-	if ttl_str := os.Getenv("CACHE_TTL_MINUTES"); ttl_str != "" {
-		ttl, err := strconv.Atoi(ttl_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Cache TTL Minutes value: %w", err)
-		}
-		cacheTTLMinutes = ttl
-	}
-	cacheTTL := time.Duration(cacheTTLMinutes) * time.Minute
-
 	dagsterScrapingIntervalSeconds := 15
 	if scrapingInterval_str := os.Getenv("DAGSTER_SCRAPING_INTERVAL_SECONDS"); scrapingInterval_str != "" {
 		scrapingInterval, err := strconv.Atoi(scrapingInterval_str)
@@ -53,6 +43,33 @@ func Load() (*Config, error) {
 		dagsterScrapingIntervalSeconds = scrapingInterval
 	}
 	dagsterScrapingInterval := time.Duration(dagsterScrapingIntervalSeconds) * time.Second
+
+	runsUpdatedAfterSafetyMarginMinutes := 5
+	if margin_str := os.Getenv("RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES"); margin_str != "" {
+		margin, err := strconv.Atoi(margin_str)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Runs Updated After Safety Margin Minutes value: %w", err)
+		}
+		runsUpdatedAfterSafetyMarginMinutes = margin
+	}
+	runsUpdatedAfterSafetyMargin := time.Duration(runsUpdatedAfterSafetyMarginMinutes) * time.Minute
+
+	// processedRuns entries are touched (their TTL refreshed) on every
+	// scrape that still finds a run relevant, so the TTL only needs to
+	// survive consecutive missed/failed scrapes rather than any particular
+	// data-related window. Defaulting it to a multiple of the scraping
+	// interval — rather than an unrelated fixed value — means it tolerates
+	// about the same span as runsUpdatedAfterSafetyMargin's default (20 x
+	// 15s = 5m) worth of scrape failures before risking a double count.
+	const cacheTTLScrapingIntervalMultiplier = 20
+	cacheTTL := cacheTTLScrapingIntervalMultiplier * dagsterScrapingInterval
+	if ttl_str := os.Getenv("CACHE_TTL_MINUTES"); ttl_str != "" {
+		ttl, err := strconv.Atoi(ttl_str)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Cache TTL Minutes value: %w", err)
+		}
+		cacheTTL = time.Duration(ttl) * time.Minute
+	}
 
 	// Completed runs are fetched incrementally after the first scrape (see
 	// CollectCompletedRuns), so LookbackWindow only matters for the initial
@@ -75,16 +92,6 @@ func Load() (*Config, error) {
 		}
 		runsPageSize = pageSize
 	}
-
-	runsUpdatedAfterSafetyMarginMinutes := 5
-	if margin_str := os.Getenv("RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES"); margin_str != "" {
-		margin, err := strconv.Atoi(margin_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Runs Updated After Safety Margin Minutes value: %w", err)
-		}
-		runsUpdatedAfterSafetyMarginMinutes = margin
-	}
-	runsUpdatedAfterSafetyMargin := time.Duration(runsUpdatedAfterSafetyMarginMinutes) * time.Minute
 
 	dagsterScrapingTimeoutSeconds := 10
 	if scrapingTimeout_str := os.Getenv("DAGSTER_SCRAPING_TIMEOUT_SECONDS"); scrapingTimeout_str != "" {
