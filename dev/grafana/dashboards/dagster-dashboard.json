@@ -83,7 +83,7 @@
       "targets": [
         {
           "expr": "dagster_active_runs",
-          "legendFormat": "{{job_name}} {{status}}"
+          "legendFormat": "{{job_name}} ({{location}}) {{status}}"
         }
       ],
       "gridPos": {
@@ -99,7 +99,7 @@
       "targets": [
         {
           "expr": "dagster_completed_runs_total",
-          "legendFormat": "{{job_name}} {{status}}"
+          "legendFormat": "{{job_name}} ({{location}}) {{status}}"
         }
       ],
       "gridPos": {
@@ -114,8 +114,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by(job_name)(increase(dagster_completed_runs_total{status=\"failure\"}[5m]))",
-          "legendFormat": "{{job_name}}"
+          "expr": "sum by(job_name, location)(increase(dagster_completed_runs_total{status=\"failure\"}[5m]))",
+          "legendFormat": "{{job_name}} ({{location}})"
         }
       ],
       "gridPos": {
