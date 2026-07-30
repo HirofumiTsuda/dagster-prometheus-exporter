@@ -78,7 +78,7 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -146,7 +146,7 @@ func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -200,7 +200,7 @@ func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndp
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
