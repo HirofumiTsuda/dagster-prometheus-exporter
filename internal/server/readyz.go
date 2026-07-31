@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"dagster-prometheus-exporter/internal/collector"
 	"encoding/json"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/collector"
 	"log"
 	"net/http"
 	"time"

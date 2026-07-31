@@ -1,4 +1,4 @@
-module dagster-prometheus-exporter
+module github.com/HirofumiTsuda/dagster-prometheus-exporter
 
 go 1.26.5
 

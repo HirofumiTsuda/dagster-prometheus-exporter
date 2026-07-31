@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"dagster-prometheus-exporter/internal/collector"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/collector"
 	"log"
 	"sync"
 	"time"
