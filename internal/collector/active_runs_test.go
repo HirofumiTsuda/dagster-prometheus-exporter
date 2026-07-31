@@ -66,3 +66,14 @@ func TestCollectActiveRunsZeroFillsKnownJobs(t *testing.T) {
 		assert.Equal(t, 0, c.activeRunsCounts[ActiveRunKey{JobName: "never_run_job", LocationName: "loc_a", Status: status}])
 	}
 }
+
+func TestCollectActiveRunsReturnsErrorOnServerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+
+	assert.Error(t, CollectActiveRuns(t.Context(), c))
+}

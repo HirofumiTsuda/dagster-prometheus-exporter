@@ -318,3 +318,25 @@ func TestCollectJobLocationsSeedsAndPrunes(t *testing.T) {
 	require.NoError(t, CollectJobLocations(t.Context(), c))
 	assert.NotContains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
 }
+
+func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+
+	assert.Error(t, CollectCompletedRuns(t.Context(), c))
+}
+
+func TestCollectJobLocationsReturnsErrorOnServerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+
+	assert.Error(t, CollectJobLocations(t.Context(), c))
+}
