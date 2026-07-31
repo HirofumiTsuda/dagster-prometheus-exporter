@@ -5,8 +5,8 @@ description = "A python environment used for tests"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dagster>=1.13.15",
-    "dagster-webserver>=1.13.15",
+    "dagster>=1.13.15,<1.14",
+    "dagster-webserver>=1.13.15,<1.14",
 ]
 
 [build-system]
