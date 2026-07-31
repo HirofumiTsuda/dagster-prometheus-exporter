@@ -18,15 +18,47 @@ type Config struct {
 	RunsUpdatedAfterSafetyMargin time.Duration
 }
 
+// getEnvInt は環境変数 key を int として読み込む。未設定なら def を返す。
+func getEnvInt(key string, def int) (int, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value: %w", key, err)
+	}
+	return n, nil
+}
+
+// getEnvDuration は環境変数 key を unit 単位の int として読み込み time.Duration に変換する。
+// 未設定なら def をそのまま返す(def は unit と異なる単位で組み立てられていてもよい)。
+func getEnvDuration(key string, unit time.Duration, def time.Duration) (time.Duration, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value: %w", key, err)
+	}
+	return time.Duration(n) * unit, nil
+}
+
+// processedRuns entries are touched (their TTL refreshed) on every scrape
+// that still finds a run relevant, so the TTL only needs to survive
+// consecutive missed/failed scrapes rather than any particular data-related
+// window. Defaulting it to a multiple of the scraping interval — rather than
+// an unrelated fixed value — means it tolerates about the same span as
+// RunsUpdatedAfterSafetyMargin's default (20 x 15s = 5m) worth of scrape
+// failures before risking a double count.
+const cacheTTLScrapingIntervalMultiplier = 20
+
 // Load は環境変数などから設定を読み込んで返す
 func Load() (*Config, error) {
-	port := 9101
-	if portStr := os.Getenv("PORT"); portStr != "" {
-		p, err := strconv.Atoi(portStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PORT value: %w", err)
-		}
-		port = p
+	port, err := getEnvInt("PORT", 9101)
+	if err != nil {
+		return nil, err
 	}
 
 	dagsterGraphQLEndpoint := os.Getenv("DAGSTER_GRAPHQL_ENDPOINT")
@@ -34,74 +66,39 @@ func Load() (*Config, error) {
 		dagsterGraphQLEndpoint = "http://127.0.0.1:3000/graphql"
 	}
 
-	dagsterScrapingIntervalSeconds := 15
-	if scrapingInterval_str := os.Getenv("DAGSTER_SCRAPING_INTERVAL_SECONDS"); scrapingInterval_str != "" {
-		scrapingInterval, err := strconv.Atoi(scrapingInterval_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Dagster Scraping Interval Seconds value: %w", err)
-		}
-		dagsterScrapingIntervalSeconds = scrapingInterval
+	dagsterScrapingInterval, err := getEnvDuration("DAGSTER_SCRAPING_INTERVAL_SECONDS", time.Second, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	dagsterScrapingInterval := time.Duration(dagsterScrapingIntervalSeconds) * time.Second
 
-	runsUpdatedAfterSafetyMarginMinutes := 5
-	if margin_str := os.Getenv("RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES"); margin_str != "" {
-		margin, err := strconv.Atoi(margin_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Runs Updated After Safety Margin Minutes value: %w", err)
-		}
-		runsUpdatedAfterSafetyMarginMinutes = margin
+	runsUpdatedAfterSafetyMargin, err := getEnvDuration("RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES", time.Minute, 5*time.Minute)
+	if err != nil {
+		return nil, err
 	}
-	runsUpdatedAfterSafetyMargin := time.Duration(runsUpdatedAfterSafetyMarginMinutes) * time.Minute
 
-	// processedRuns entries are touched (their TTL refreshed) on every
-	// scrape that still finds a run relevant, so the TTL only needs to
-	// survive consecutive missed/failed scrapes rather than any particular
-	// data-related window. Defaulting it to a multiple of the scraping
-	// interval — rather than an unrelated fixed value — means it tolerates
-	// about the same span as runsUpdatedAfterSafetyMargin's default (20 x
-	// 15s = 5m) worth of scrape failures before risking a double count.
-	const cacheTTLScrapingIntervalMultiplier = 20
-	cacheTTL := cacheTTLScrapingIntervalMultiplier * dagsterScrapingInterval
-	if ttl_str := os.Getenv("CACHE_TTL_MINUTES"); ttl_str != "" {
-		ttl, err := strconv.Atoi(ttl_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Cache TTL Minutes value: %w", err)
-		}
-		cacheTTL = time.Duration(ttl) * time.Minute
+	cacheTTL, err := getEnvDuration("CACHE_TTL_MINUTES", time.Minute, cacheTTLScrapingIntervalMultiplier*dagsterScrapingInterval)
+	if err != nil {
+		return nil, err
 	}
 
 	// Completed runs are fetched incrementally after the first scrape (see
 	// CollectCompletedRuns), so LookbackWindow only matters for the initial
 	// backfill on startup. Defaulting it to the scraping interval avoids
 	// dumping a large batch of historical runs into the counters at t=0.
-	lookbackWindow := dagsterScrapingInterval
-	if lookback_window_str := os.Getenv("LOOKBACK_WINDOW_MINUTES"); lookback_window_str != "" {
-		lookback, err := strconv.Atoi(lookback_window_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Lookback Window Minutes value: %w", err)
-		}
-		lookbackWindow = time.Duration(lookback) * time.Minute
+	lookbackWindow, err := getEnvDuration("LOOKBACK_WINDOW_MINUTES", time.Minute, dagsterScrapingInterval)
+	if err != nil {
+		return nil, err
 	}
 
-	runsPageSize := 500
-	if pageSize_str := os.Getenv("RUNS_PAGE_SIZE"); pageSize_str != "" {
-		pageSize, err := strconv.Atoi(pageSize_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Runs Page Size value: %w", err)
-		}
-		runsPageSize = pageSize
+	runsPageSize, err := getEnvInt("RUNS_PAGE_SIZE", 500)
+	if err != nil {
+		return nil, err
 	}
 
-	dagsterScrapingTimeoutSeconds := 10
-	if scrapingTimeout_str := os.Getenv("DAGSTER_SCRAPING_TIMEOUT_SECONDS"); scrapingTimeout_str != "" {
-		scrapingTimeout, err := strconv.Atoi(scrapingTimeout_str)
-		if err != nil {
-			return nil, fmt.Errorf("invalid Dagster Scraping Timeout Seconds value: %w", err)
-		}
-		dagsterScrapingTimeoutSeconds = scrapingTimeout
+	dagsterScrapingTimeout, err := getEnvDuration("DAGSTER_SCRAPING_TIMEOUT_SECONDS", time.Second, 10*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	dagsterScrapingTimeout := time.Duration(dagsterScrapingTimeoutSeconds) * time.Second
 
 	return &Config{
 		Port:                         port,
