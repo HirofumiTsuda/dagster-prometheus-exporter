@@ -54,14 +54,14 @@ func TestCollectCompletedRunsUsesIncrementalUpdatedAfter(t *testing.T) {
 	safetyMargin := 5 * time.Minute
 	c := NewDagsterCollector(t.Context(), ts.URL, lookback, time.Hour, 500, safetyMargin)
 
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	require.Len(t, seenUpdatedAfter, 1)
 	expectedFirst := getUpdatedAfter(time.Now(), lookback)
 	assert.InDelta(t, expectedFirst, seenUpdatedAfter[0], 5,
 		"first scrape (no watermark yet) should fall back to the lookback window")
 	assert.Equal(t, float64(1000), c.lastSeenUpdateTime, "watermark should advance to the max updateTime seen")
 
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	require.Len(t, seenUpdatedAfter, 2)
 	assert.Equal(t, float64(1000)-safetyMargin.Seconds(), seenUpdatedAfter[1],
 		"second scrape should use the watermark minus the safety margin, not the full lookback window again")
@@ -89,7 +89,7 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 	defer ts.Close()
 
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 
 	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
 
@@ -155,10 +155,10 @@ func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	require.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
 
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status,
 		"last known status should survive a scrape with no completed runs in range")
 }
@@ -242,7 +242,7 @@ func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) 
 	defer ts.Close()
 
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
-	CollectCompletedRuns(t.Context(), c)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 
 	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "old.module.path", "success")
 	require.NoError(t, err)
@@ -308,13 +308,13 @@ func TestCollectJobLocationsSeedsAndPrunes(t *testing.T) {
 
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
-	CollectJobLocations(t.Context(), c)
+	require.NoError(t, CollectJobLocations(t.Context(), c))
 	assert.Contains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
 
 	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "loc_a", "success")
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), testutil.ToFloat64(metric))
 
-	CollectJobLocations(t.Context(), c)
+	require.NoError(t, CollectJobLocations(t.Context(), c))
 	assert.NotContains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
 }

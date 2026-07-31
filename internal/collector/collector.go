@@ -14,19 +14,24 @@ const unknownLocationName = "unknown"
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
-	activeRunsDesc       *prometheus.Desc
-	completedRunsCounter *prometheus.CounterVec
-	lastRunStatusDesc    *prometheus.Desc
+	activeRunsDesc        *prometheus.Desc
+	completedRunsCounter  *prometheus.CounterVec
+	lastRunStatusDesc     *prometheus.Desc
+	scrapeDurationDesc    *prometheus.Desc
+	lastScrapeSuccessDesc *prometheus.Desc
+	scrapeErrorsCounter   *prometheus.CounterVec
 
-	mutex                        sync.Mutex
-	activeRunsCounts             map[ActiveRunKey]int
-	processedRuns                *ttlcache.Cache[string, struct{}]
-	lookbackWindow               time.Duration
-	knownJobs                    map[JobKey]struct{}
-	lastRunStatus                map[JobKey]lastRunEntry
-	trackedCompletedRunKeys      map[JobKey]struct{}
-	lastSeenUpdateTime           float64
-	runsPageSize                 int
+	mutex                   sync.Mutex
+	activeRunsCounts        map[ActiveRunKey]int
+	processedRuns           *ttlcache.Cache[string, struct{}]
+	lookbackWindow          time.Duration
+	knownJobs               map[JobKey]struct{}
+	lastRunStatus           map[JobKey]lastRunEntry
+	trackedCompletedRunKeys map[JobKey]struct{}
+	lastSeenUpdateTime      float64
+	runsPageSize            int
+	scrapeDuration          map[string]float64
+	lastScrapeSuccess       map[string]bool
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -77,23 +82,49 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"job_name", "location", "status"},
 			nil,
 		),
+		scrapeDurationDesc: prometheus.NewDesc(
+			"dagster_exporter_scrape_duration_seconds",
+			"Duration of the most recent scrape, per collector",
+			[]string{"collector"},
+			nil,
+		),
+		lastScrapeSuccessDesc: prometheus.NewDesc(
+			"dagster_exporter_last_scrape_success",
+			"Whether the most recent scrape succeeded (1) or failed (0), per collector",
+			[]string{"collector"},
+			nil,
+		),
+		scrapeErrorsCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "dagster_exporter_scrape_errors_total",
+				Help: "Total number of failed scrapes, per collector",
+			},
+			[]string{"collector"},
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
+		scrapeDuration:               make(map[string]float64),
+		lastScrapeSuccess:            make(map[string]bool),
 	}
 }
 
 func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.activeRunsDesc
 	ch <- c.lastRunStatusDesc
+	ch <- c.scrapeDurationDesc
+	ch <- c.lastScrapeSuccessDesc
 	c.completedRunsCounter.Describe(ch)
+	c.scrapeErrorsCounter.Describe(ch)
 }
 
 func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectActiveRuns(c, ch)
 	reflectLastRunStatus(c, ch)
+	reflectScrapeHealth(c, ch)
 	c.completedRunsCounter.Collect(ch)
+	c.scrapeErrorsCounter.Collect(ch)
 }

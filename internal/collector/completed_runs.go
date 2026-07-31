@@ -18,7 +18,7 @@ func getUpdatedAfter(base time.Time, lookbackWindow time.Duration) float64 {
 	return float64(base.Add(-lookbackWindow).Unix())
 }
 
-func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
+func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 	c.mutex.Lock()
 	lastSeenUpdateTime := c.lastSeenUpdateTime
 	c.mutex.Unlock()
@@ -62,7 +62,7 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 	})
 	if err != nil {
 		log.Printf("failed to collect completed runs from dagster: %v", err)
-		return
+		return err
 	}
 
 	if maxUpdateTimeSeen > lastSeenUpdateTime {
@@ -70,6 +70,8 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) {
 		c.lastSeenUpdateTime = maxUpdateTimeSeen
 		c.mutex.Unlock()
 	}
+
+	return nil
 }
 
 // lastRunEntry tracks the status of the most recently completed run seen so

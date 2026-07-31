@@ -18,7 +18,7 @@ type ActiveRunKey struct {
 	Status       string
 }
 
-func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
+func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 	counts := make(map[ActiveRunKey]int)
 
 	err := fetchRunPages(ctx, activeStatuses, 0, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
@@ -38,7 +38,7 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
 	})
 	if err != nil {
 		log.Printf("failed to collect active runs from dagster: %v", err)
-		return
+		return err
 	}
 
 	c.mutex.Lock()
@@ -58,6 +58,7 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) {
 	}
 
 	c.activeRunsCounts = counts
+	return nil
 }
 
 func reflectActiveRuns(c *DagsterCollector, ch chan<- prometheus.Metric) {

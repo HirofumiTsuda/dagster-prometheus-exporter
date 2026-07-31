@@ -10,13 +10,13 @@ type JobKey struct {
 	LocationName string
 }
 
-func CollectJobLocations(ctx context.Context, c *DagsterCollector) {
+func CollectJobLocations(ctx context.Context, c *DagsterCollector) error {
 	req := getJobLocationsRequest()
 
 	resp, err := getJobLocations(ctx, req, c.dagsterGraphQLEndpoint)
 	if err != nil {
 		log.Printf("failed to collect job locations from dagster: %v", err)
-		return
+		return err
 	}
 
 	known := make(map[JobKey]struct{})
@@ -34,4 +34,6 @@ func CollectJobLocations(ctx context.Context, c *DagsterCollector) {
 	pruneCompletedRunsCounter(c, known)
 	seedCompletedRunsCounter(c, known)
 	pruneLastRunStatus(c, known)
+
+	return nil
 }

@@ -31,7 +31,7 @@ func TestCollectActiveRunsLocationLabel(t *testing.T) {
 	defer ts.Close()
 
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
-	CollectActiveRuns(t.Context(), c)
+	assert.NoError(t, CollectActiveRuns(t.Context(), c))
 
 	assert.Equal(t, 1, c.activeRunsCounts[ActiveRunKey{JobName: "job_a", LocationName: "loc_a", Status: "STARTED"}])
 	assert.Equal(t, 1, c.activeRunsCounts[ActiveRunKey{JobName: "job_b", LocationName: unknownLocationName, Status: "QUEUED"}])
@@ -60,7 +60,7 @@ func TestCollectActiveRunsZeroFillsKnownJobs(t *testing.T) {
 		{JobName: "never_run_job", LocationName: "loc_a"}: {},
 	}
 
-	CollectActiveRuns(t.Context(), c)
+	assert.NoError(t, CollectActiveRuns(t.Context(), c))
 
 	for _, status := range activeStatuses {
 		assert.Equal(t, 0, c.activeRunsCounts[ActiveRunKey{JobName: "never_run_job", LocationName: "loc_a", Status: status}])
