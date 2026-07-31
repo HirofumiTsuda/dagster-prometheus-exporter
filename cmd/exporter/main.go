@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"dagster-prometheus-exporter/internal/config"
-	"dagster-prometheus-exporter/internal/server"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/config"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/server"
 	"log"
 	"os"
 	"os/signal"

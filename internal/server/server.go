@@ -2,9 +2,9 @@ package server
 
 import (
 	"context"
-	"dagster-prometheus-exporter/internal/collector"
-	"dagster-prometheus-exporter/internal/config"
 	"fmt"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/collector"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/config"
 	"log"
 	"net/http"
 	"time"

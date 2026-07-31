@@ -5,6 +5,7 @@
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
 [![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/HirofumiTsuda/dagster-prometheus-exporter.svg)](https://pkg.go.dev/github.com/HirofumiTsuda/dagster-prometheus-exporter)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
 
 A Prometheus exporter for [Dagster](https://dagster.io/) run metrics. It polls Dagster's GraphQL API on an interval and exposes run counts, statuses, and code-location information as Prometheus metrics.
@@ -143,7 +144,14 @@ dagster_last_run_info{status="failure"}
 
 ## Usage
 
-Build and run the binary directly:
+Install directly with Go:
+
+```sh
+go install github.com/HirofumiTsuda/dagster-prometheus-exporter/cmd/exporter@latest
+DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql exporter
+```
+
+Or clone and build it yourself:
 
 ```sh
 go build -o exporter ./cmd/exporter
