@@ -90,6 +90,16 @@ All metrics are labeled with `job_name` and `location` (the Dagster code locatio
 | `dagster_completed_runs_total` | Counter | `job_name`, `location`, `status` | Total number of completed runs (`success`, `failure`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically. |
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
 
+### Exporter self-health
+
+These report on the exporter itself — whether its own scrapes of Dagster are succeeding — rather than on Dagster's run state. All three are labeled `collector`, one of `job_locations`, `active_runs`, or `completed_runs` (the three concurrent collectors described in [Architecture](#architecture)).
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `dagster_exporter_scrape_duration_seconds` | Gauge | `collector` | Duration of that collector's most recent scrape. |
+| `dagster_exporter_last_scrape_success` | Gauge | `collector` | `1` if that collector's most recent scrape succeeded, `0` if it failed. |
+| `dagster_exporter_scrape_errors_total` | Counter | `collector` | Total number of failed scrapes for that collector, since the exporter started. |
+
 ### Example output
 
 ```

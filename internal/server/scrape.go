@@ -15,17 +15,19 @@ import (
 func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
 	var wg sync.WaitGroup
 
-	spawn := func(fn func()) {
+	spawn := func(name string, fn func(context.Context, *collector.DagsterCollector) error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fn()
+			start := time.Now()
+			err := fn(ctx, c)
+			c.RecordScrapeResult(name, time.Since(start), err)
 		}()
 	}
 
-	spawn(func() { collector.CollectJobLocations(ctx, c) })
-	spawn(func() { collector.CollectActiveRuns(ctx, c) })
-	spawn(func() { collector.CollectCompletedRuns(ctx, c) })
+	spawn("job_locations", collector.CollectJobLocations)
+	spawn("active_runs", collector.CollectActiveRuns)
+	spawn("completed_runs", collector.CollectCompletedRuns)
 
 	wg.Wait()
 }
