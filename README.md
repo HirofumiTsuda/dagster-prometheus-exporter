@@ -134,7 +134,13 @@ go build -o exporter ./cmd/exporter
 DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql ./exporter
 ```
 
-Or with Docker:
+Or pull the published image from GHCR:
+
+```sh
+docker run -p 9101:9101 -e DAGSTER_GRAPHQL_ENDPOINT=http://dagster:3000/graphql ghcr.io/hirofumitsuda/dagster-prometheus-exporter:latest
+```
+
+Or build it yourself:
 
 ```sh
 docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter .
@@ -193,7 +199,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull req
 - [ ] Exporter self-health metrics (scrape duration/errors)
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
-- [ ] Published container image / tagged release
+- [x] Published container image / tagged release
 
 ## License
 
