@@ -14,6 +14,7 @@ A Prometheus exporter for [Dagster](https://dagster.io/) run metrics. It polls D
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Compatibility](#compatibility)
 - [Motivation](#motivation)
 - [Architecture](#architecture)
 - [Metrics](#metrics)
@@ -37,6 +38,10 @@ docker compose up --build
 | Exporter metrics | http://localhost:9101/metrics | |
 | Prometheus | http://localhost:9090 | Scrapes the exporter using `dev/prometheus/prometheus.docker.yml`. |
 | Grafana | http://localhost:3001 | Login `root` / `passw0rd` (local dev only). Dashboard "Dagster Run Monitoring" is auto-provisioned from `dev/grafana/dashboards/dagster-dashboard.json`. |
+
+## Compatibility
+
+Tested against Dagster **1.13.15** (the version pinned in `pyproject.toml`/`uv.lock` for the local dev stack). Dagster's GraphQL API isn't a stable, versioned contract — fields and types can change between releases — so this exporter isn't guaranteed to work against significantly older or newer Dagster versions. If you hit a GraphQL error running against a different version, please [open an issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose).
 
 ## Motivation
 
