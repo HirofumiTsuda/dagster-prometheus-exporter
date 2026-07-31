@@ -220,7 +220,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull req
 - [x] Per-code-location labeling
 - [x] Latest run status
 - [ ] Run duration (latest completed, and longest-running active run per job)
-- [ ] Exporter self-health metrics (scrape duration/errors)
+- [x] Exporter self-health metrics (scrape duration/errors)
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
 - [x] Published container image / tagged release
