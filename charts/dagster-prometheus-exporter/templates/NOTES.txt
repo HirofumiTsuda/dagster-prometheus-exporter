@@ -1,0 +1,16 @@
+dagster-prometheus-exporter has been installed.
+
+{{- if not .Values.env.DAGSTER_GRAPHQL_ENDPOINT }}
+
+WARNING: env.DAGSTER_GRAPHQL_ENDPOINT is not set, so the exporter is
+falling back to its built-in default (http://127.0.0.1:3000/graphql),
+which almost certainly isn't reachable from inside this cluster. Set
+env.DAGSTER_GRAPHQL_ENDPOINT to your Dagster webserver's in-cluster
+Service address.
+{{- end }}
+
+Check that it's scraping successfully:
+
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "dagster-prometheus-exporter.fullname" . }} {{ .Values.port }}:{{ .Values.port }}
+  curl http://localhost:{{ .Values.port }}/readyz
+  curl http://localhost:{{ .Values.port }}/metrics

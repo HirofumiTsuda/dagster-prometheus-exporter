@@ -171,6 +171,13 @@ docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter .
 docker run -p 9101:9101 -e DAGSTER_GRAPHQL_ENDPOINT=http://dagster:3000/graphql dagster-prometheus-exporter
 ```
 
+Or deploy to Kubernetes with the bundled [Helm chart](charts/dagster-prometheus-exporter):
+
+```sh
+helm install my-dagster-exporter ./charts/dagster-prometheus-exporter \
+  --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
+```
+
 Metrics are then available at `http://localhost:9101/metrics`.
 
 ### Configuration
@@ -224,6 +231,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull req
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
 - [x] Published container image / tagged release
+- [x] Helm chart for Kubernetes deployment
 
 ## License
 

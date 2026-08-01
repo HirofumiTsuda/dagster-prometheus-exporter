@@ -1,0 +1,49 @@
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/hirofumitsuda/dagster-prometheus-exporter
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Port the exporter listens on. Used for the container port, the Service
+# port, and the PORT env var — keep it a single value so those three can't
+# drift out of sync.
+port: 9101
+
+service:
+  type: ClusterIP
+
+# Passed to the exporter as environment variables via a ConfigMap. Keys
+# match internal/config/config.go exactly (see the README's Configuration
+# table). DAGSTER_GRAPHQL_ENDPOINT has no sane default for a real
+# deployment — it must be set here.
+#
+# If Dagster itself was installed via the official chart
+# (https://github.com/dagster-io/dagster/tree/master/helm/dagster), its
+# webserver Service is named "<release-name>-webserver" and listens on
+# port 80 by default — e.g. for `helm install dagster dagster/dagster -n
+# dagster`, that's http://dagster-webserver.dagster.svc.cluster.local/graphql.
+env: {}
+  # DAGSTER_GRAPHQL_ENDPOINT: "http://dagster-webserver.dagster.svc.cluster.local/graphql"
+  # LOOKBACK_WINDOW_MINUTES: "15"
+  # CACHE_TTL_MINUTES: "300"
+  # DAGSTER_SCRAPING_INTERVAL_SECONDS: "15"
+  # DAGSTER_SCRAPING_TIMEOUT_SECONDS: "10"
+  # RUNS_PAGE_SIZE: "500"
+  # RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES: "5"
+
+resources: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# For prometheus-operator setups. Requires the ServiceMonitor CRD to already
+# be installed in the cluster.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  additionalLabels: {}
