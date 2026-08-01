@@ -1,0 +1,31 @@
+name: Helm Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/helm-lint.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/helm-lint.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+
+      - run: helm lint --strict charts/dagster-prometheus-exporter
+
+      - run: helm template charts/dagster-prometheus-exporter
+
+      - name: Render with a representative set of overrides
+        run: |
+          helm template charts/dagster-prometheus-exporter \
+            --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql \
+            --set serviceMonitor.enabled=true
