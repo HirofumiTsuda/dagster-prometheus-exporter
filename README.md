@@ -171,10 +171,11 @@ docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter .
 docker run -p 9101:9101 -e DAGSTER_GRAPHQL_ENDPOINT=http://dagster:3000/graphql dagster-prometheus-exporter
 ```
 
-Or deploy to Kubernetes with the bundled [Helm chart](charts/dagster-prometheus-exporter):
+Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter), published as an OCI artifact on GHCR:
 
 ```sh
-helm install my-dagster-exporter ./charts/dagster-prometheus-exporter \
+helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
+  --version 0.1.0 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
