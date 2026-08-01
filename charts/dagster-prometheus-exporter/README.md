@@ -4,7 +4,15 @@ A Helm chart for [dagster-prometheus-exporter](https://github.com/HirofumiTsuda/
 
 ## Installing
 
-This chart isn't published to a chart repository yet (see [#33](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/33) for the plan). For now, install from a local checkout:
+The chart is published as an OCI artifact to GHCR:
+
+```sh
+helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
+  --version 0.1.0 \
+  --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
+```
+
+Or install from a local checkout:
 
 ```sh
 git clone https://github.com/HirofumiTsuda/dagster-prometheus-exporter.git
