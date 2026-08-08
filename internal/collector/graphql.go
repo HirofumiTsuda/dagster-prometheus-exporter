@@ -31,6 +31,15 @@ type RunRepositoryOrigin struct {
 	RepositoryLocationName string `json:"repositoryLocationName"`
 }
 
+// RunTag is one Dagster run tag (key/value pair). Notably includes
+// "dagster/concurrency_key" for runs subject to a tag-based run-queue
+// concurrency limit (dagster.yaml's concurrency.runs.tag_concurrency_limits)
+// — see CollectConcurrencyKeyBacklog.
+type RunTag struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type Run struct {
 	RunId            string               `json:"runId"`
 	JobName          string               `json:"jobName"`
@@ -38,6 +47,7 @@ type Run struct {
 	CreationTime     float64              `json:"creationTime"`
 	UpdateTime       float64              `json:"updateTime"`
 	EndTime          float64              `json:"endTime"`
+	Tags             []RunTag             `json:"tags"`
 	RepositoryOrigin *RunRepositoryOrigin `json:"repositoryOrigin"`
 }
 
