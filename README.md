@@ -142,8 +142,11 @@ sum(rate(dagster_completed_runs_total[5m]))
 # Jobs whose last run failed
 dagster_last_run_info{status="failure"}
 
-# Active runs that have been queued/starting/started for over 10 minutes
-dagster_active_run_duration_seconds > 600
+# Alert: some job has a run that's been stuck in QUEUED for over 10 minutes.
+# dagster_active_runs alone can't tell "5 runs queued, all fine, just churning
+# through fast" apart from "5 runs queued, one of them stuck for 2 hours" —
+# both look like active_runs{status="queued"} == 5. This catches the latter.
+dagster_active_run_duration_seconds{status="queued"} > 600
 
 # Slowest jobs by their most recent run duration
 topk(5, dagster_last_run_duration_seconds)
