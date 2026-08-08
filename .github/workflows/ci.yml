@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      python: ${{ steps.filter.outputs.python }}
     steps:
       - uses: actions/checkout@v7
 
@@ -22,6 +23,10 @@ jobs:
               - "**.go"
               - go.mod
               - go.sum
+              - .github/workflows/ci.yml
+            python:
+              - "**.py"
+              - pyproject.toml
               - .github/workflows/ci.yml
 
   test:
@@ -61,3 +66,14 @@ jobs:
         with:
           install-mode: goinstall
           version: v2.12.2
+
+  python-lint:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9
+
+      - run: uvx ruff@0.16.2 check .

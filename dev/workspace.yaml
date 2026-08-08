@@ -11,5 +11,5 @@ load_from:
       module_name: dev.dagster_workspace.definitions
       location_name: dev-dagster-location
   - python_file:
-      relative_path: broken_location/repo.py
+      relative_path: broken_location/definitions.py
       location_name: broken_location

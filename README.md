@@ -237,7 +237,13 @@ golangci-lint run ./...
 go test ./...
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull request.
+The `dev/` Python code (used by the local dev stack, not shipped in the exporter itself) is linted separately with [Ruff](https://docs.astral.sh/ruff/):
+
+```sh
+uvx ruff check .
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change — on every push and pull request.
 
 ## Roadmap
 
