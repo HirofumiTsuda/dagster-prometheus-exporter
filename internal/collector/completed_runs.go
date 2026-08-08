@@ -46,7 +46,11 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 
 			key := JobKey{JobName: result.JobName, LocationName: location}
 			if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
-				c.lastRunStatus[key] = lastRunEntry{status: result.Status, endTime: result.EndTime}
+				c.lastRunStatus[key] = lastRunEntry{
+					status:   result.Status,
+					endTime:  result.EndTime,
+					duration: result.EndTime - result.CreationTime,
+				}
 			}
 
 			if item := c.processedRuns.Get(result.RunId); item != nil {
@@ -74,25 +78,40 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 	return nil
 }
 
-// lastRunEntry tracks the status of the most recently completed run seen so
-// far for a job, so dagster_last_run_info keeps reporting it even after the
-// run falls outside the completed-runs lookback window.
+// lastRunEntry tracks the status and duration of the most recently completed
+// run seen so far for a job, so dagster_last_run_info/dagster_last_run_duration_seconds
+// keep reporting it even after the run falls outside the completed-runs
+// lookback window.
 type lastRunEntry struct {
-	status  string
-	endTime float64
+	status   string
+	endTime  float64
+	duration float64
 }
 
-func reflectLastRunStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
+// reflectLastRun emits both dagster_last_run_info and
+// dagster_last_run_duration_seconds from a single locked pass over
+// c.lastRunStatus — they're two views of the same underlying entry, so
+// iterating it twice (with two separate locks) would be pure overhead.
+func reflectLastRun(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	for key, entry := range c.lastRunStatus {
+		status := strings.ToLower(entry.status)
 		ch <- prometheus.MustNewConstMetric(
 			c.lastRunStatusDesc,
 			prometheus.GaugeValue,
 			1,
 			key.JobName,
 			key.LocationName,
-			strings.ToLower(entry.status),
+			status,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.lastRunDurationDesc,
+			prometheus.GaugeValue,
+			entry.duration,
+			key.JobName,
+			key.LocationName,
+			status,
 		)
 	}
 }

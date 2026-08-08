@@ -90,6 +90,7 @@ The per-job metrics are labeled with `job_name` and `location` (the Dagster code
 | `dagster_active_runs` | Gauge | `job_name`, `location`, `status` | Number of currently active runs (`queued`, `starting`, `started`) per job. Jobs with no active runs are reported as `0` rather than omitted. |
 | `dagster_completed_runs_total` | Counter | `job_name`, `location`, `status` | Total number of completed runs (`success`, `failure`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically. |
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
+| `dagster_last_run_duration_seconds` | Gauge | `job_name`, `location`, `status` | Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`. |
 | `dagster_code_location_load_error` | Gauge | `location` | `1` if that code location most recently failed to load (e.g. a broken import in user code), `0` if it loaded successfully. A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality. |
 
 ### Exporter self-health
@@ -115,6 +116,8 @@ dagster_completed_runs_total{job_name="failing_job",location="dev-dagster-worksp
 
 dagster_last_run_info{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 1
 dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 1
+
+dagster_last_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 32.34893083572388
 ```
 
 ### PromQL examples
@@ -133,6 +136,9 @@ sum(rate(dagster_completed_runs_total[5m]))
 
 # Jobs whose last run failed
 dagster_last_run_info{status="failure"}
+
+# Slowest jobs by their most recent run duration
+topk(5, dagster_last_run_duration_seconds)
 ```
 
 ## Endpoints
@@ -251,7 +257,8 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Completed runs (seeded for idle jobs, pruned for removed jobs)
 - [x] Per-code-location labeling
 - [x] Latest run status
-- [ ] Run duration (latest completed, and longest-running active run per job)
+- [x] Latest completed run duration
+- [ ] Running duration (longest-running active run per job)
 - [x] Exporter self-health metrics (scrape duration/errors)
 - [x] Code location load error visibility
 - [ ] Schedule tick status
