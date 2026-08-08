@@ -96,13 +96,14 @@ The per-job metrics are labeled with `job_name` and `location` (the Dagster code
 
 ### Exporter self-health
 
-These report on the exporter itself — whether its own scrapes of Dagster are succeeding — rather than on Dagster's run state. All three are labeled `collector`, one of `job_locations`, `active_runs`, `completed_runs`, or `code_location_status` (the four concurrent collectors described in [Architecture](#architecture)).
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `job_locations`, `active_runs`, `completed_runs`, or `code_location_status` (the four concurrent collectors described in [Architecture](#architecture)).
 
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
 | `dagster_exporter_scrape_duration_seconds` | Gauge | `collector` | Duration of that collector's most recent scrape. |
 | `dagster_exporter_last_scrape_success` | Gauge | `collector` | `1` if that collector's most recent scrape succeeded, `0` if it failed. |
 | `dagster_exporter_scrape_errors_total` | Counter | `collector` | Total number of failed scrapes for that collector, since the exporter started. |
+| `dagster_exporter_build_info` | Gauge | `version`, `commit` | Always `1`; the same `kube_pod_info`-style pattern as `dagster_last_run_info`, but for the exporter binary itself (same idiom as `node_exporter`'s `node_exporter_build_info`). Useful for spotting pods still running an old version after a fleet rollout (e.g. via the Helm chart). The published container image sets real values at build time; a plain `go build`/`go install` reports `version="dev"`, `commit="unknown"`. |
 
 ### Example output
 
@@ -277,6 +278,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Latest completed run duration
 - [x] Running duration (longest-running active run per job)
 - [x] Exporter self-health metrics (scrape duration/errors)
+- [x] Exporter build info metric
 - [x] Code location load error visibility
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
