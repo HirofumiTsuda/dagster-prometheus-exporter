@@ -257,7 +257,13 @@ The `dev/` Python code (used by the local dev stack, not shipped in the exporter
 uvx ruff check .
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change — on every push and pull request.
+The Grafana dashboard JSON (`dev/grafana/dashboards/*.json`) is kept `jq`-formatted so diffs stay readable; after editing it, reformat with:
+
+```sh
+jq . dev/grafana/dashboards/dagster-dashboard.json > /tmp/dashboard.json && mv /tmp/dashboard.json dev/grafana/dashboards/dagster-dashboard.json
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change, the dashboard check only when `dev/grafana/dashboards/**.json` changes — on every push and pull request.
 
 ## Roadmap
 
