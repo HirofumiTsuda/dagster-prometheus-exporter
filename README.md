@@ -211,6 +211,23 @@ If you already have your own Grafana/Prometheus and just want the dashboard, imp
 2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json).
 3. Point it at a Prometheus data source that's scraping this exporter.
 
+### Testing a broken code location
+
+To see `dagster_code_location_load_error` actually report `1` (rather than trusting it blind), the repo ships a second, deliberately broken code location (`dev/broken_location/`) plus a `workspace.yaml` at the repo root that loads it alongside the normal one. It's opt-in: `docker compose up dagster` doesn't pass `-w`, so it keeps using pyproject.toml's `[tool.dagster]` section (the single healthy location) unless you explicitly load `workspace.yaml`.
+
+```sh
+# Stop the compose-managed dagster container first if it's running, then:
+docker compose run --rm --service-ports --name dagster-prometheus-exporter-dagster-1 dagster \
+  uv run dagster dev -w /app/workspace.yaml -h 0.0.0.0 -p 3000
+```
+
+Then point the exporter at it (either `DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql` on the host, or `http://dagster-prometheus-exporter-dagster-1:3000/graphql` from another container on the same compose network) and check `/metrics` for:
+
+```
+dagster_code_location_load_error{location="broken_location"} 1
+dagster_code_location_load_error{location="dev-dagster-location"} 0
+```
+
 ### Running tests
 
 ```sh

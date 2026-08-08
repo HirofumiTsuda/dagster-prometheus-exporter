@@ -1,0 +1,15 @@
+# Only used when explicitly loaded (`dagster dev -w workspace.yaml`); the
+# default `docker compose up dagster` command does not pass -w and falls
+# back to pyproject.toml's [tool.dagster] section (single healthy
+# location), so this file doesn't change the normal dev experience.
+#
+# This adds a second, deliberately broken code location alongside the
+# normal one, so dagster_code_location_load_error has something to report
+# `1` for. See the "Testing a broken code location" section in README.md.
+load_from:
+  - python_module:
+      module_name: dev.dagster_workspace.definitions
+      location_name: dev-dagster-location
+  - python_file:
+      relative_path: dev/broken_location/repo.py
+      location_name: broken_location
