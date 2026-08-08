@@ -28,6 +28,7 @@ func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
 	spawn("job_locations", collector.CollectJobLocations)
 	spawn("active_runs", collector.CollectActiveRuns)
 	spawn("completed_runs", collector.CollectCompletedRuns)
+	spawn("code_location_status", collector.CollectCodeLocationStatus)
 
 	wg.Wait()
 }

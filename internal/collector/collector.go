@@ -14,12 +14,13 @@ const unknownLocationName = "unknown"
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
-	activeRunsDesc        *prometheus.Desc
-	completedRunsCounter  *prometheus.CounterVec
-	lastRunStatusDesc     *prometheus.Desc
-	scrapeDurationDesc    *prometheus.Desc
-	lastScrapeSuccessDesc *prometheus.Desc
-	scrapeErrorsCounter   *prometheus.CounterVec
+	activeRunsDesc            *prometheus.Desc
+	completedRunsCounter      *prometheus.CounterVec
+	lastRunStatusDesc         *prometheus.Desc
+	scrapeDurationDesc        *prometheus.Desc
+	lastScrapeSuccessDesc     *prometheus.Desc
+	scrapeErrorsCounter       *prometheus.CounterVec
+	codeLocationLoadErrorDesc *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunsCounts        map[ActiveRunKey]int
@@ -32,6 +33,7 @@ type DagsterCollector struct {
 	runsPageSize            int
 	scrapeDuration          map[string]float64
 	lastScrapeSuccess       map[string]bool
+	codeLocationLoadError   map[string]bool
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -101,6 +103,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			},
 			[]string{"collector"},
 		),
+		codeLocationLoadErrorDesc: prometheus.NewDesc(
+			"dagster_code_location_load_error",
+			"Whether the code location most recently failed to load (1) or loaded successfully (0)",
+			[]string{"location"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -117,6 +125,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.lastRunStatusDesc
 	ch <- c.scrapeDurationDesc
 	ch <- c.lastScrapeSuccessDesc
+	ch <- c.codeLocationLoadErrorDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -125,6 +134,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectActiveRuns(c, ch)
 	reflectLastRunStatus(c, ch)
 	reflectScrapeHealth(c, ch)
+	reflectCodeLocationStatus(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

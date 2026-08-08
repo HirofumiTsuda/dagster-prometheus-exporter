@@ -151,7 +151,7 @@ type GraphQLJobLocationsResponse struct {
 	Data struct {
 		RepositoriesOrError struct {
 			Typename string `json:"__typename"`
-			Nodes      []struct {
+			Nodes    []struct {
 				Name     string `json:"name"`
 				Location struct {
 					Name string `json:"name"`
@@ -204,6 +204,73 @@ func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 	}
 
 	var graphQLResp GraphQLJobLocationsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(graphQLResp.Errors) > 0 {
+		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
+	}
+
+	return &graphQLResp, nil
+}
+
+type GraphQLWorkspaceStatusResponse struct {
+	Data struct {
+		WorkspaceOrError struct {
+			Typename        string `json:"__typename"`
+			LocationEntries []struct {
+				Name                string `json:"name"`
+				LocationOrLoadError struct {
+					Typename string   `json:"__typename"`
+					Message  string   `json:"message"`
+					Stack    []string `json:"stack"`
+				} `json:"locationOrLoadError"`
+			} `json:"locationEntries"`
+			Message string   `json:"message"`
+			Stack   []string `json:"stack"`
+		} `json:"workspaceOrError"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+//go:embed queries/get_workspace_status.graphql
+var workspaceStatusQuery string
+
+func getWorkspaceStatusRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: workspaceStatusQuery,
+	}
+}
+
+func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLWorkspaceStatusResponse, error) {
+	jsonBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Timeout is intentionally not set here: the caller controls how long a
+	// request may run via ctx (see http.NewRequestWithContext above).
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute http request: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var graphQLResp GraphQLWorkspaceStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

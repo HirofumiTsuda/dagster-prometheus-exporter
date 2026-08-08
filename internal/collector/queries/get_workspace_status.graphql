@@ -1,0 +1,21 @@
+query GetWorkspaceStatus {
+  workspaceOrError {
+    __typename
+    ... on Workspace {
+      locationEntries {
+        name
+        locationOrLoadError {
+          __typename
+          ... on PythonError {
+            message
+            stack
+          }
+        }
+      }
+    }
+    ... on PythonError {
+      message
+      stack
+    }
+  }
+}
