@@ -12,6 +12,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
       python: ${{ steps.filter.outputs.python }}
+      grafana: ${{ steps.filter.outputs.grafana }}
     steps:
       - uses: actions/checkout@v7
 
@@ -27,6 +28,9 @@ jobs:
             python:
               - "**.py"
               - pyproject.toml
+              - .github/workflows/ci.yml
+            grafana:
+              - "dev/grafana/dashboards/**.json"
               - .github/workflows/ci.yml
 
   test:
@@ -77,3 +81,17 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
 
       - run: uvx ruff@0.16.2 check .
+
+  grafana-lint:
+    needs: changes
+    if: needs.changes.outputs.grafana == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check dashboard JSON is valid and jq-formatted
+        run: |
+          for f in dev/grafana/dashboards/*.json; do
+            jq empty "$f"
+            diff <(jq . "$f") "$f"
+          done

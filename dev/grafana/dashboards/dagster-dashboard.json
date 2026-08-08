@@ -216,6 +216,28 @@
       }
     },
     {
+      "title": "Active Run Duration by Job",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_active_run_duration_seconds",
+          "legendFormat": "{{job_name}} ({{location}}) {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      }
+    },
+    {
       "title": "Broken Code Locations",
       "type": "stat",
       "targets": [

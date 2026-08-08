@@ -87,7 +87,8 @@ The per-job metrics are labeled with `job_name` and `location` (the Dagster code
 
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
-| `dagster_active_runs` | Gauge | `job_name`, `location`, `status` | Number of currently active runs (`queued`, `starting`, `started`) per job. Jobs with no active runs are reported as `0` rather than omitted. |
+| `dagster_active_runs` | Gauge | `job_name`, `location`, `status` | Number of currently active runs (`queued`, `starting`, `started`) per job. Jobs with no active runs are reported as `0` rather than omitted. Each scrape re-queries Dagster for whatever is active *at that instant* (unlike the completed-runs collector, this isn't incremental) — a run that passes through `queued`/`starting`/`started` and finishes entirely between two scrapes is never observed in any active status at all. Shortening the scrape interval narrows this blind spot but can't close it. |
+| `dagster_active_run_duration_seconds` | Gauge | `job_name`, `location`, `status` | Elapsed time (`now - updateTime`) of the longest-waiting/longest-running active run per job and status — the max across that group, not a sum or average. Dagster only bumps a run's `updateTime` on a run-level status transition (not on step-level events like op start/success), so it marks exactly when the run entered its *current* status — e.g. for `started` this is time-in-execution, not time-since-queued. `run_id` isn't a label (it would grow unbounded), so this is the closest available signal for "how long has the oldest run in this group been stuck here," useful for spotting queue backlogs. `0` when there are no active runs in that group, same as `dagster_active_runs` — and it has the same scrape-interval blind spot described above. |
 | `dagster_completed_runs_total` | Counter | `job_name`, `location`, `status` | Total number of completed runs (`success`, `failure`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically. |
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
 | `dagster_last_run_duration_seconds` | Gauge | `job_name`, `location`, `status` | Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`. |
@@ -109,6 +110,10 @@ These report on the exporter itself — whether its own scrapes of Dagster are s
 dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="queued"} 0
 dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="started"} 1
 dagster_active_runs{job_name="heavy_job",location="dev-dagster-workspace",status="starting"} 0
+
+dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="queued"} 0
+dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="started"} 5.761711018
+dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="starting"} 0
 
 dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="failure"} 0
 dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 12
@@ -136,6 +141,12 @@ sum(rate(dagster_completed_runs_total[5m]))
 
 # Jobs whose last run failed
 dagster_last_run_info{status="failure"}
+
+# Alert: some job has a run that's been stuck in QUEUED for over 10 minutes.
+# dagster_active_runs alone can't tell "5 runs queued, all fine, just churning
+# through fast" apart from "5 runs queued, one of them stuck for 2 hours" —
+# both look like active_runs{status="queued"} == 5. This catches the latter.
+dagster_active_run_duration_seconds{status="queued"} > 600
 
 # Slowest jobs by their most recent run duration
 topk(5, dagster_last_run_duration_seconds)
@@ -249,7 +260,13 @@ The `dev/` Python code (used by the local dev stack, not shipped in the exporter
 uvx ruff check .
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change — on every push and pull request.
+The Grafana dashboard JSON (`dev/grafana/dashboards/*.json`) is kept `jq`-formatted so diffs stay readable; after editing it, reformat with:
+
+```sh
+jq . dev/grafana/dashboards/dagster-dashboard.json > /tmp/dashboard.json && mv /tmp/dashboard.json dev/grafana/dashboards/dagster-dashboard.json
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change, the dashboard check only when `dev/grafana/dashboards/**.json` changes — on every push and pull request.
 
 ## Roadmap
 
@@ -258,7 +275,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Per-code-location labeling
 - [x] Latest run status
 - [x] Latest completed run duration
-- [ ] Running duration (longest-running active run per job)
+- [x] Running duration (longest-running active run per job)
 - [x] Exporter self-health metrics (scrape duration/errors)
 - [x] Code location load error visibility
 - [ ] Schedule tick status
