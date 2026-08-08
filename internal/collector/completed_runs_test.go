@@ -67,7 +67,7 @@ func TestCollectCompletedRunsUsesIncrementalUpdatedAfter(t *testing.T) {
 		"second scrape should use the watermark minus the safety margin, not the full lookback window again")
 }
 
-func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
+func TestCollectCompletedRunsTracksLastRunStatusAndDuration(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -76,8 +76,8 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 				"runsOrError": {
 					"__typename": "Runs",
 					"results": [
-						{"runId": "run_1", "jobName": "job_a", "status": "FAILURE", "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}},
-						{"runId": "run_2", "jobName": "job_a", "status": "SUCCESS", "endTime": 200, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
+						{"runId": "run_1", "jobName": "job_a", "status": "FAILURE", "creationTime": 0, "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}},
+						{"runId": "run_2", "jobName": "job_a", "status": "SUCCESS", "creationTime": 150, "endTime": 200, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
 					]
 				}
 			}
@@ -93,27 +93,44 @@ func TestCollectCompletedRunsTracksLastRunStatus(t *testing.T) {
 
 	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
 
+	// job_never_ran has never had a completed run, so it has nothing to
+	// report yet: no seeded 0 duration, no seeded "unknown" status.
+	neverRanKey := JobKey{JobName: "job_never_ran", LocationName: "loc_a"}
+	assert.NotContains(t, c.lastRunStatus, neverRanKey)
+
 	ch := make(chan prometheus.Metric, 8)
 	go func() {
-		reflectLastRunStatus(c, ch)
+		reflectLastRun(c, ch)
 		close(ch)
 	}()
 
-	var metrics []prometheus.Metric
+	var infoMetric, durationMetric *dto.Metric
 	for m := range ch {
-		metrics = append(metrics, m)
+		var dm dto.Metric
+		require.NoError(t, m.Write(&dm))
+		switch {
+		case strings.Contains(m.Desc().String(), "dagster_last_run_info"):
+			infoMetric = &dm
+		case strings.Contains(m.Desc().String(), "dagster_last_run_duration_seconds"):
+			durationMetric = &dm
+		}
 	}
-	require.Len(t, metrics, 1)
+	require.NotNil(t, infoMetric, "expected a dagster_last_run_info series")
+	require.NotNil(t, durationMetric, "expected a dagster_last_run_duration_seconds series")
 
-	var m dto.Metric
-	require.NoError(t, metrics[0].Write(&m))
-	assert.Equal(t, float64(1), m.GetGauge().GetValue())
+	assert.Equal(t, float64(1), infoMetric.GetGauge().GetValue())
+	assert.Equal(t, float64(50), durationMetric.GetGauge().GetValue(),
+		"duration should be endTime - creationTime of the most recent run (200-150), not the earlier one (100-0)")
 
-	labels := make(map[string]string)
-	for _, l := range m.GetLabel() {
-		labels[l.GetName()] = l.GetValue()
+	for _, m := range []*dto.Metric{infoMetric, durationMetric} {
+		labels := make(map[string]string)
+		for _, l := range m.GetLabel() {
+			labels[l.GetName()] = l.GetValue()
+		}
+		assert.Equal(t, "job_a", labels["job_name"])
+		assert.Equal(t, "loc_a", labels["location"])
+		assert.Equal(t, "success", labels["status"])
 	}
-	assert.Equal(t, "success", labels["status"])
 }
 
 func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {

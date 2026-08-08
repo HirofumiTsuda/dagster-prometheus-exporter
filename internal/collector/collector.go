@@ -21,6 +21,7 @@ type DagsterCollector struct {
 	lastScrapeSuccessDesc     *prometheus.Desc
 	scrapeErrorsCounter       *prometheus.CounterVec
 	codeLocationLoadErrorDesc *prometheus.Desc
+	lastRunDurationDesc       *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunsCounts        map[ActiveRunKey]int
@@ -109,6 +110,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"location"},
 			nil,
 		),
+		lastRunDurationDesc: prometheus.NewDesc(
+			"dagster_last_run_duration_seconds",
+			"Duration of the most recently completed run for a job (endTime - creationTime)",
+			[]string{"job_name", "location", "status"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -126,13 +133,14 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.scrapeDurationDesc
 	ch <- c.lastScrapeSuccessDesc
 	ch <- c.codeLocationLoadErrorDesc
+	ch <- c.lastRunDurationDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
 
 func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectActiveRuns(c, ch)
-	reflectLastRunStatus(c, ch)
+	reflectLastRun(c, ch)
 	reflectScrapeHealth(c, ch)
 	reflectCodeLocationStatus(c, ch)
 	c.completedRunsCounter.Collect(ch)
