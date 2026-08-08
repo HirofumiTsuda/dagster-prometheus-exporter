@@ -63,7 +63,7 @@ flowchart LR
     Prometheus["Prometheus"]
     Grafana["Grafana"]
 
-    Exporter -- "poll every N seconds<br/>(runsOrError, repositoriesOrError)" --> Dagster
+    Exporter -- "poll every N seconds<br/>(runsOrError, repositoriesOrError,<br/>workspaceOrError)" --> Dagster
     Prometheus -- "scrape /metrics" --> Exporter
     Grafana -- query --> Prometheus
 ```
@@ -73,27 +73,28 @@ The exporter is a single Go binary with no external state store — everything i
 - `cmd/exporter` — entrypoint; loads config and starts the server.
 - `internal/config` — reads settings from environment variables.
 - `internal/server` — runs the HTTP server (`/metrics`, `/healthz`, `/readyz`) and a background ticker that triggers a scrape on `DAGSTER_SCRAPING_INTERVAL_SECONDS`.
-- `internal/collector` — on each scrape, queries Dagster's GraphQL API (active runs, completed runs, and the job/code-location roster) and updates the in-memory state behind a mutex; `DagsterCollector` implements `prometheus.Collector` and renders that state into metrics whenever Prometheus scrapes `/metrics`.
+- `internal/collector` — on each scrape, queries Dagster's GraphQL API (active runs, completed runs, the job/code-location roster, and each code location's load status) and updates the in-memory state behind a mutex; `DagsterCollector` implements `prometheus.Collector` and renders that state into metrics whenever Prometheus scrapes `/metrics`.
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.
 
-The three collectors (job/location roster, active runs, completed runs) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
+The four collectors (job/location roster, active runs, completed runs, code-location load status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`. The code-location load status collector is intentionally independent of the job/location roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` below.
 
 Fetching completed runs is incremental, not a full re-scan every cycle: after the first scrape (which backfills `LOOKBACK_WINDOW_MINUTES`), each subsequent scrape only asks Dagster for runs updated since the last-seen watermark (minus a small safety margin, to tolerate a run's DB write committing slightly after its `updateTime`). Any single fetch — the initial backfill or an unusually large batch of updates — pages through `runsOrError` via cursor (`RUNS_PAGE_SIZE` per page) and folds each page into the in-memory counters as it arrives, rather than buffering the full result set in memory first.
 
 ## Metrics
 
-All metrics are labeled with `job_name` and `location` (the Dagster code location the job belongs to), so that jobs with the same name in different code locations don't collide.
+The per-job metrics are labeled with `job_name` and `location` (the Dagster code location the job belongs to), so that jobs with the same name in different code locations don't collide. `dagster_code_location_load_error` is location-scoped rather than job-scoped, since it reports on a code location as a whole.
 
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
 | `dagster_active_runs` | Gauge | `job_name`, `location`, `status` | Number of currently active runs (`queued`, `starting`, `started`) per job. Jobs with no active runs are reported as `0` rather than omitted. |
 | `dagster_completed_runs_total` | Counter | `job_name`, `location`, `status` | Total number of completed runs (`success`, `failure`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically. |
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
+| `dagster_code_location_load_error` | Gauge | `location` | `1` if that code location most recently failed to load (e.g. a broken import in user code), `0` if it loaded successfully. A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality. |
 
 ### Exporter self-health
 
-These report on the exporter itself — whether its own scrapes of Dagster are succeeding — rather than on Dagster's run state. All three are labeled `collector`, one of `job_locations`, `active_runs`, or `completed_runs` (the three concurrent collectors described in [Architecture](#architecture)).
+These report on the exporter itself — whether its own scrapes of Dagster are succeeding — rather than on Dagster's run state. All three are labeled `collector`, one of `job_locations`, `active_runs`, `completed_runs`, or `code_location_status` (the four concurrent collectors described in [Architecture](#architecture)).
 
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
@@ -210,6 +211,23 @@ If you already have your own Grafana/Prometheus and just want the dashboard, imp
 2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json).
 3. Point it at a Prometheus data source that's scraping this exporter.
 
+### Testing a broken code location
+
+To see `dagster_code_location_load_error` actually report `1` (rather than trusting it blind), the repo ships a second, deliberately broken code location (`dev/broken_location/`) plus `dev/workspace.yaml`, which loads it alongside the normal one. It's opt-in: `docker compose up dagster` doesn't pass `-w`, so it keeps using pyproject.toml's `[tool.dagster]` section (the single healthy location) unless you explicitly load `dev/workspace.yaml`.
+
+```sh
+# Stop the compose-managed dagster container first if it's running, then:
+docker compose run --rm --service-ports --name dagster-prometheus-exporter-dagster-1 dagster \
+  uv run dagster dev -w /app/dev/workspace.yaml -h 0.0.0.0 -p 3000
+```
+
+Then point the exporter at it (either `DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql` on the host, or `http://dagster-prometheus-exporter-dagster-1:3000/graphql` from another container on the same compose network) and check `/metrics` for:
+
+```
+dagster_code_location_load_error{location="broken_location"} 1
+dagster_code_location_load_error{location="dev-dagster-location"} 0
+```
+
 ### Running tests
 
 ```sh
@@ -219,7 +237,13 @@ golangci-lint run ./...
 go test ./...
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull request.
+The `dev/` Python code (used by the local dev stack, not shipped in the exporter itself) is linted separately with [Ruff](https://docs.astral.sh/ruff/):
+
+```sh
+uvx ruff check .
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.go`/`go.mod`/`go.sum` change, the Ruff step only when `.py`/`pyproject.toml` change — on every push and pull request.
 
 ## Roadmap
 
@@ -229,6 +253,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push and pull req
 - [x] Latest run status
 - [ ] Run duration (latest completed, and longest-running active run per job)
 - [x] Exporter self-health metrics (scrape duration/errors)
+- [x] Code location load error visibility
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
 - [x] Published container image / tagged release
