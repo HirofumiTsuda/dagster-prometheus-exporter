@@ -283,6 +283,33 @@ dagster_code_location_load_error{location="dev-dagster-location"} 0
 
 Unlike the broken-code-location fixture above, these aren't opt-in: `dev/dagster_workspace/job.py` defines `quick_job_schedule` (cron `* * * * *`, `default_status=DefaultScheduleStatus.RUNNING`) and `quick_job_sensor` (`minimum_interval_seconds=30`, `default_status=DefaultSensorStatus.RUNNING`, always returns a `SkipReason`) against a near-instant job, so the standard dev stack (`docker compose up`) starts ticking both automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status`/`dagster_sensor_status`/`dagster_sensor_last_tick_status` report real data within about a minute of startup.
 
+### Testing the Helm chart against a real Dagster (kind)
+
+`.github/workflows/helm-e2e.yml` installs the chart into a [kind](https://kind.sigs.k8s.io/) cluster against a real Dagster instance and asserts `/readyz`/`/metrics` report real data — `helm lint`/`helm template` (in `helm-lint.yml`) only catch template syntax errors, not "does this chart actually work." The Dagster instance is a plain Deployment+Service (`dev/kubernetes/dagster-deployment.yaml`, running the same `docker/dagster-dev.Dockerfile` image as the `docker compose` dev stack) — a CI-only test fixture, not part of the chart itself. Both it and the exporter image are always built from the local checkout, never pulled from a registry, so the test validates the current change, not whatever was last published.
+
+To reproduce locally:
+
+```sh
+kind create cluster --name dagster-exporter-e2e
+
+docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter-e2e:exporter .
+docker build -f docker/dagster-dev.Dockerfile -t dagster-prometheus-exporter-e2e:dagster .
+kind load docker-image dagster-prometheus-exporter-e2e:exporter dagster-prometheus-exporter-e2e:dagster \
+  --name dagster-exporter-e2e
+
+kubectl apply -f dev/kubernetes/dagster-deployment.yaml
+kubectl rollout status deployment/dagster --timeout=120s
+
+helm install exporter-e2e charts/dagster-prometheus-exporter \
+  -f dev/kubernetes/exporter-e2e-values.yaml --wait --timeout=120s
+
+kubectl port-forward svc/exporter-e2e-dagster-prometheus-exporter 9101:9101 &
+curl http://localhost:9101/readyz
+curl http://localhost:9101/metrics
+
+kind delete cluster --name dagster-exporter-e2e
+```
+
 ### Running tests
 
 ```sh

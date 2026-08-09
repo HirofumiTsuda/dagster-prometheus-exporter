@@ -1,0 +1,48 @@
+# CI-only test fixture for the Helm chart's kind-based e2e test (see
+# .github/workflows/helm-e2e.yml). A plain Deployment+Service running the
+# same dev/dagster-dev.Dockerfile image as the docker-compose dev stack —
+# deliberately not part of the Helm chart itself (this repo isn't taking on
+# maintaining a Dagster chart), just a stand-in Dagster instance for the
+# exporter chart to point at.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dagster
+  labels:
+    app: dagster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dagster
+  template:
+    metadata:
+      labels:
+        app: dagster
+    spec:
+      containers:
+        - name: dagster
+          image: dagster-prometheus-exporter-e2e:dagster
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            # /graphql only accepts POST with a query body (GET returns 400
+            # "No GraphQL query found"); /server_info is dagster-webserver's
+            # actual lightweight healthcheck endpoint.
+            httpGet:
+              path: /server_info
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dagster
+spec:
+  selector:
+    app: dagster
+  ports:
+    - port: 3000
+      targetPort: 3000

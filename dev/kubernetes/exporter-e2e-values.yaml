@@ -1,0 +1,10 @@
+# Helm values for the kind-based e2e test (.github/workflows/helm-e2e.yml).
+# Points the chart at the dev/kubernetes/dagster-deployment.yaml fixture and
+# at the locally-built, kind-loaded image (never pulled from a registry).
+image:
+  repository: dagster-prometheus-exporter-e2e
+  tag: exporter
+  pullPolicy: Never
+
+env:
+  DAGSTER_GRAPHQL_ENDPOINT: http://dagster.default.svc.cluster.local:3000/graphql

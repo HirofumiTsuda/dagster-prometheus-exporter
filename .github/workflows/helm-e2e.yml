@@ -1,0 +1,88 @@
+name: Helm e2e (kind)
+
+# Complements helm-lint.yml: that catches template syntax errors, this
+# actually installs the chart into a real cluster against a real Dagster
+# instance and asserts the exporter gets real data — see issue #44.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "docker/**"
+      - "dev/dagster_workspace/**"
+      - "dev/kubernetes/**"
+      - ".github/workflows/helm-e2e.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "docker/**"
+      - "dev/dagster_workspace/**"
+      - "dev/kubernetes/**"
+      - ".github/workflows/helm-e2e.yml"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: dagster-exporter-e2e
+
+      - uses: azure/setup-helm@v5
+
+      - name: Build exporter and Dagster dev images
+        run: |
+          docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter-e2e:exporter .
+          docker build -f docker/dagster-dev.Dockerfile -t dagster-prometheus-exporter-e2e:dagster .
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image dagster-prometheus-exporter-e2e:exporter dagster-prometheus-exporter-e2e:dagster \
+            --name dagster-exporter-e2e
+
+      - name: Deploy the Dagster test fixture
+        run: |
+          kubectl apply -f dev/kubernetes/dagster-deployment.yaml
+          kubectl rollout status deployment/dagster --timeout=120s
+
+      - name: Install the exporter chart
+        run: |
+          helm install exporter-e2e charts/dagster-prometheus-exporter \
+            -f dev/kubernetes/exporter-e2e-values.yaml \
+            --wait --timeout=120s
+
+      - name: Assert /readyz and /metrics report real data
+        run: |
+          kubectl port-forward svc/exporter-e2e-dagster-prometheus-exporter 9101:9101 &
+          PORT_FORWARD_PID=$!
+          # Give the port-forward a moment to establish before curling.
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:9101/healthz > /dev/null && break
+            sleep 1
+          done
+
+          echo "--- /readyz ---"
+          READYZ=$(curl -sf http://localhost:9101/readyz)
+          echo "$READYZ"
+          echo "$READYZ" | grep -q '"status":"OK"' || { echo "::error::exporter is not ready against the real Dagster instance"; exit 1; }
+
+          echo "--- /metrics (dagster_active_runs) ---"
+          METRICS=$(curl -sf http://localhost:9101/metrics)
+          echo "$METRICS" | grep '^dagster_active_runs{' || { echo "::error::no dagster_active_runs series found — exporter isn't reporting real data"; exit 1; }
+
+          kill "$PORT_FORWARD_PID"
+
+      - name: Dump pod state for debugging
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          echo "--- dagster ---"
+          kubectl describe deployment/dagster
+          kubectl logs deployment/dagster --tail=200
+          echo "--- exporter ---"
+          kubectl describe deployment/exporter-e2e-dagster-prometheus-exporter
+          kubectl logs deployment/exporter-e2e-dagster-prometheus-exporter --tail=200
