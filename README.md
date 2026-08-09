@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/HirofumiTsuda/dagster-prometheus-exporter)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/releases/latest)
 [![CI](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml)
 [![Helm e2e](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml)
+[![Published chart smoke test](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-published-smoke.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-published-smoke.yml)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dagster-prometheus-exporter)](https://artifacthub.io/packages/helm/dagster-prometheus-exporter/dagster-prometheus-exporter)
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
@@ -313,6 +314,12 @@ curl http://localhost:9101/metrics
 
 kind delete cluster --name dagster-exporter-e2e
 ```
+
+### Verifying the published chart actually installs
+
+`.github/workflows/helm-published-smoke.yml` (status: see the badge at the top of this README) is a narrower, complementary check: it `helm install`s the *latest published* chart straight from GHCR with no `image.tag`/`image.repository` overrides — the same command a first-time user following this README's [Usage](#usage) section would run — and asserts the pod reaches `Ready`. Unlike `helm-e2e.yml` above, it never builds anything from the local checkout, so it's the only check that would have caught the chart's `appVersion`/published-tag mismatch that shipped in `chart-v0.1.0`–`0.1.2` (see [chart-v0.1.3](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/releases/tag/chart-v0.1.3)): the chart rendered without error and `helm install` reported success either way, since Helm doesn't validate that a container image reference actually resolves — only the pod itself failed to pull it. No real Dagster instance is involved, since `readinessProbe` is `/healthz` (doesn't depend on Dagster connectivity) — this only proves the published defaults produce a container that starts, not full functional correctness.
+
+Also scheduled + on-demand rather than per-PR, for the same reasons as `helm-e2e.yml` — plus a PR's chart/image changes aren't published yet, so there'd be nothing new for this check to test until after merge and release anyway.
 
 ### Running tests
 

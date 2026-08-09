@@ -1,0 +1,53 @@
+name: Published chart smoke test
+
+# Complements helm-e2e.yml, which always builds the exporter/Dagster images
+# fresh from the current checkout — useful for catching regressions in
+# main, but it bypasses the registry entirely, so it can't catch drift
+# between what's published and what the chart's defaults actually resolve
+# to. That gap is exactly how the appVersion/tag mismatch fixed in
+# chart-v0.1.3 shipped undetected (see #64): the chart's default image.tag
+# referenced a tag that didn't exist on GHCR.
+#
+# This installs the latest published chart from GHCR with no image
+# overrides — the same command a first-time user following the README
+# would run — into a kind cluster, and asserts the pod actually reaches
+# Ready. No real Dagster instance is needed for this: readinessProbe is
+# /healthz (doesn't depend on Dagster connectivity), so this only proves
+# "the published chart's defaults produce a container that starts and
+# passes its health check," not full functional correctness — that's what
+# helm-e2e.yml is for.
+#
+# Scheduled + on-demand, not pull_request/push, for the same reasons as
+# helm-e2e.yml: a kind cluster spin-up is heavy per-PR, and this is
+# inherently about the current *published* state, not whatever's in the PR
+# branch — a chart/docker change in a PR hasn't been published yet, so
+# testing it here wouldn't make sense until after merge and release anyway.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: dagster-exporter-published-smoke
+
+      - uses: azure/setup-helm@v5
+
+      - name: Install the latest published chart (no image overrides)
+        run: |
+          helm install smoke oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
+            --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dummy:3000/graphql \
+            --wait --timeout=120s
+
+      - name: Dump pod state for debugging
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          POD_LABEL_SELECTOR="app.kubernetes.io/instance=smoke"
+          kubectl describe pod -l "$POD_LABEL_SELECTOR"
+          kubectl logs -l "$POD_LABEL_SELECTOR" --tail=200 || true
