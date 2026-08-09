@@ -42,8 +42,16 @@ func elapsedSince(run Run, now time.Time) float64 {
 	return now.Sub(time.Unix(int64(run.UpdateTime), 0)).Seconds()
 }
 
+// CollectActiveRuns fetches every QUEUED/STARTING/STARTED run and folds
+// each into both activeRunAggregates (dagster_active_runs/
+// dagster_active_run_duration_seconds) and concurrencyKeyBacklog
+// (dagster_run_queue_concurrency_key_backlog) from a single GraphQL fetch —
+// the latter only needs QUEUED runs' tags, which this call already reads
+// on every page, so giving it its own separate query would just re-fetch
+// the same runs twice per scrape for no reason.
 func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 	aggregates := make(map[ActiveRunKey]activeRunAggregate)
+	backlog := make(map[string]int)
 	now := time.Now()
 
 	err := fetchRunPages(ctx, activeStatuses, 0, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
@@ -64,6 +72,8 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 				agg.maxElapsed = elapsed
 			}
 			aggregates[key] = agg
+
+			countConcurrencyKeyBacklog(run, backlog)
 		}
 		return nil
 	})
@@ -88,7 +98,20 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 		}
 	}
 
+	// Zero-fill every concurrency key we've previously reported backlog
+	// for, even if it has none right now, so its series doesn't just
+	// disappear from Grafana — "0" is a meaningful, distinct signal from
+	// "this key has never been seen." There's no upfront list of
+	// configured concurrency keys to seed from (unlike knownJobs), so
+	// "every key ever observed" is the best available substitute.
+	for key := range c.concurrencyKeyBacklog {
+		if _, ok := backlog[key]; !ok {
+			backlog[key] = 0
+		}
+	}
+
 	c.activeRunAggregates = aggregates
+	c.concurrencyKeyBacklog = backlog
 	return nil
 }
 

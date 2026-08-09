@@ -153,3 +153,50 @@ func TestCollectActiveRunsTracksMaxElapsedPerGroup(t *testing.T) {
 	assert.True(t, sawCount, "expected a dagster_active_runs series")
 	assert.True(t, sawDuration, "expected a dagster_active_run_duration_seconds series")
 }
+
+func TestCollectActiveRunsAlsoTracksConcurrencyKeyBacklog(t *testing.T) {
+	call := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		body := `{
+			"data": {
+				"runsOrError": {
+					"__typename": "Runs",
+					"results": [
+						{"runId": "run_1", "jobName": "heavy_job", "status": "QUEUED", "tags": [{"key": "dagster/concurrency_key", "value": "heavy_limit"}]},
+						{"runId": "run_2", "jobName": "heavy_job", "status": "QUEUED", "tags": [{"key": "dagster/concurrency_key", "value": "heavy_limit"}]},
+						{"runId": "run_3", "jobName": "heavy_job", "status": "STARTED", "tags": [{"key": "dagster/concurrency_key", "value": "heavy_limit"}]}
+					]
+				}
+			}
+		}`
+		if call > 1 {
+			// The backlog has cleared: nothing queued anymore.
+			body = `{
+				"data": {
+					"runsOrError": {
+						"__typename": "Runs",
+						"results": []
+					}
+				}
+			}`
+		}
+		_, err := w.Write([]byte(body))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+
+	require.NoError(t, CollectActiveRuns(t.Context(), c))
+	// Only the two QUEUED runs count toward backlog; the STARTED one (past
+	// the concurrency limit, actually running) doesn't.
+	assert.Equal(t, 2, c.concurrencyKeyBacklog["heavy_limit"])
+
+	require.NoError(t, CollectActiveRuns(t.Context(), c))
+	assert.Equal(t, 0, c.concurrencyKeyBacklog["heavy_limit"],
+		"a previously-seen key should be zero-filled, not dropped, once its backlog clears")
+}
