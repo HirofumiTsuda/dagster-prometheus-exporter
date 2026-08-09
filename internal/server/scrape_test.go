@@ -92,7 +92,7 @@ func TestScrapeDagsterRecordsSelfHealthMetrics(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"job_locations", "active_runs", "completed_runs"} {
+	for _, name := range []string{"definitions_roster", "active_runs", "completed_runs"} {
 		assert.Equal(t, float64(1), success[name], "%s should report a successful scrape", name)
 	}
 }

@@ -49,16 +49,16 @@ func TestRecordScrapeResultSuccess(t *testing.T) {
 func TestRecordScrapeResultFailureIncrementsErrorCounter(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
 
-	c.RecordScrapeResult("job_locations", 100*time.Millisecond, errors.New("boom"))
-	c.RecordScrapeResult("job_locations", 100*time.Millisecond, errors.New("boom again"))
+	c.RecordScrapeResult("definitions_roster", 100*time.Millisecond, errors.New("boom"))
+	c.RecordScrapeResult("definitions_roster", 100*time.Millisecond, errors.New("boom again"))
 
-	errMetric, err := c.scrapeErrorsCounter.GetMetricWithLabelValues("job_locations")
+	errMetric, err := c.scrapeErrorsCounter.GetMetricWithLabelValues("definitions_roster")
 	require.NoError(t, err)
 	assert.Equal(t, float64(2), testutil.ToFloat64(errMetric),
 		"error counter should accumulate across failed scrapes, not just reflect the latest one")
 
 	c.mutex.Lock()
-	success := c.lastScrapeSuccess["job_locations"]
+	success := c.lastScrapeSuccess["definitions_roster"]
 	c.mutex.Unlock()
 	assert.False(t, success)
 }

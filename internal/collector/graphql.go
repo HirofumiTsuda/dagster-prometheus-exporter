@@ -157,7 +157,14 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 	return &graphQLResp, nil
 }
 
-type GraphQLJobLocationsResponse struct {
+// GraphQLDefinitionsRosterResponse is the shape of repositoriesOrError used
+// to build the exporter's view of "what exists": known jobs (JobKey,
+// pruning/seeding for completed-run counters and last-run status) and known
+// schedules with their most recent tick, in one fetch. Dagster's Repository
+// type exposes jobs and schedules as independent sibling fields (not
+// schedules-via-jobs), so both can be requested together without any
+// per-job/per-schedule follow-up query.
+type GraphQLDefinitionsRosterResponse struct {
 	Data struct {
 		RepositoriesOrError struct {
 			Typename string `json:"__typename"`
@@ -169,6 +176,17 @@ type GraphQLJobLocationsResponse struct {
 				Jobs []struct {
 					Name string `json:"name"`
 				} `json:"jobs"`
+				Schedules []struct {
+					Name          string `json:"name"`
+					CronSchedule  string `json:"cronSchedule"`
+					ScheduleState struct {
+						Status string `json:"status"`
+						Ticks  []struct {
+							Status    string  `json:"status"`
+							Timestamp float64 `json:"timestamp"`
+						} `json:"ticks"`
+					} `json:"scheduleState"`
+				} `json:"schedules"`
 			} `json:"nodes"`
 			Message string   `json:"message"`
 			Stack   []string `json:"stack"`
@@ -179,16 +197,16 @@ type GraphQLJobLocationsResponse struct {
 	} `json:"errors"`
 }
 
-//go:embed queries/get_jobs_per_repository.graphql
-var jobLocationsQuery string
+//go:embed queries/get_definitions_roster.graphql
+var definitionsRosterQuery string
 
-func getJobLocationsRequest() *GraphQLRequest {
+func getDefinitionsRosterRequest() *GraphQLRequest {
 	return &GraphQLRequest{
-		Query: jobLocationsQuery,
+		Query: definitionsRosterQuery,
 	}
 }
 
-func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLJobLocationsResponse, error) {
+func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDefinitionsRosterResponse, error) {
 	jsonBytes, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
@@ -213,7 +231,7 @@ func getJobLocations(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var graphQLResp GraphQLJobLocationsResponse
+	var graphQLResp GraphQLDefinitionsRosterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
