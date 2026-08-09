@@ -2,7 +2,7 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "v0.2.0"
 home: https://github.com/HirofumiTsuda/dagster-prometheus-exporter
 sources:
@@ -10,3 +10,18 @@ sources:
 maintainers:
   - name: HirofumiTsuda
     url: https://github.com/HirofumiTsuda
+keywords:
+  - dagster
+  - prometheus
+  - monitoring
+  - observability
+  - grafana
+annotations:
+  artifacthub.io/category: monitoring-logging
+  artifacthub.io/license: MIT
+  artifacthub.io/links: |
+    - name: GitHub
+      url: https://github.com/HirofumiTsuda/dagster-prometheus-exporter
+    - name: Issues
+      url: https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues
+  artifacthub.io/prerelease: "false"
