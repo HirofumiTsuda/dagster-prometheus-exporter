@@ -8,7 +8,7 @@ The chart is published as an OCI artifact to GHCR:
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.0 \
+  --version 0.1.1 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
