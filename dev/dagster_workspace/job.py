@@ -1,6 +1,6 @@
 import time
 
-from dagster import job, op
+from dagster import DefaultScheduleStatus, ScheduleDefinition, job, op
 
 
 @op
@@ -15,6 +15,12 @@ def failing_op():
     raise RuntimeError("Intentional error for exporter testing")
 
 
+@op
+def quick_op():
+    """A near-instant op, so the schedule below produces real SUCCESS ticks
+    quickly for exercising dagster_schedule_status/dagster_schedule_last_tick_status."""
+
+
 @job(tags={"dagster/concurrency_key": "heavy_limit"})
 def heavy_job():
     slow_op()
@@ -25,4 +31,19 @@ def failing_job():
     failing_op()
 
 
-jobs = [heavy_job, failing_job]
+@job
+def quick_job():
+    quick_op()
+
+
+jobs = [heavy_job, failing_job, quick_job]
+
+# default_status=RUNNING so it's already ticking without a manual toggle in
+# the UI/API — see the "Testing schedule tick status" section in README.md.
+every_minute_schedule = ScheduleDefinition(
+    job=quick_job,
+    cron_schedule="* * * * *",
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+
+schedules = [every_minute_schedule]

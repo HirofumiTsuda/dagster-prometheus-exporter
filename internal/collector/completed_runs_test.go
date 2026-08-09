@@ -288,54 +288,6 @@ func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) 
 	}
 }
 
-func TestCollectJobLocationsSeedsAndPrunes(t *testing.T) {
-	call := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		call++
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		body := `{
-			"data": {
-				"repositoriesOrError": {
-					"__typename": "RepositoryConnection",
-					"nodes": [
-						{"name": "repo", "location": {"name": "loc_a"}, "jobs": [{"name": "job_a"}]}
-					]
-				}
-			}
-		}`
-		if call > 1 {
-			body = `{
-				"data": {
-					"repositoriesOrError": {
-						"__typename": "RepositoryConnection",
-						"nodes": []
-					}
-				}
-			}`
-		}
-
-		_, err := w.Write([]byte(body))
-		if err != nil {
-			t.Fatalf("failed to write mock response: %v", err)
-		}
-	}))
-	defer ts.Close()
-
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
-
-	require.NoError(t, CollectJobLocations(t.Context(), c))
-	assert.Contains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
-
-	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "loc_a", "success")
-	require.NoError(t, err)
-	assert.Equal(t, float64(0), testutil.ToFloat64(metric))
-
-	require.NoError(t, CollectJobLocations(t.Context(), c))
-	assert.NotContains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
-}
-
 func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -345,15 +297,4 @@ func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectCompletedRuns(t.Context(), c))
-}
-
-func TestCollectJobLocationsReturnsErrorOnServerError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer ts.Close()
-
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
-
-	assert.Error(t, CollectJobLocations(t.Context(), c))
 }

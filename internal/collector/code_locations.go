@@ -13,7 +13,7 @@ import (
 // whether each code location in the workspace is currently loadable. A
 // broken code location is a distinct failure mode from "this location has
 // zero jobs" (see issue #38), so it gets its own query and its own metric
-// rather than being inferred from job_locations' output.
+// rather than being inferred from the definitions roster's output.
 func CollectCodeLocationStatus(ctx context.Context, c *DagsterCollector) error {
 	req := getWorkspaceStatusRequest()
 

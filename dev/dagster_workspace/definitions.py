@@ -1,5 +1,5 @@
 from dagster import Definitions
 
-from dev.dagster_workspace.job import jobs
+from dev.dagster_workspace.job import jobs, schedules
 
-defs = Definitions(jobs=jobs)
+defs = Definitions(jobs=jobs, schedules=schedules)

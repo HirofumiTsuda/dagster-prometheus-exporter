@@ -24,10 +24,14 @@ type DagsterCollector struct {
 	lastRunDurationDesc       *prometheus.Desc
 	activeRunDurationDesc     *prometheus.Desc
 	concurrencyKeyBacklogDesc *prometheus.Desc
+	scheduleStatusDesc        *prometheus.Desc
+	scheduleTickStatusDesc    *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
 	concurrencyKeyBacklog   map[string]int
+	scheduleStatus          map[ScheduleKey]string
+	scheduleTickStatus      map[ScheduleKey]scheduleTickEntry
 	processedRuns           *ttlcache.Cache[string, struct{}]
 	lookbackWindow          time.Duration
 	knownJobs               map[JobKey]struct{}
@@ -131,6 +135,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"concurrency_key"},
 			nil,
 		),
+		scheduleStatusDesc: prometheus.NewDesc(
+			"dagster_schedule_status",
+			"Whether a schedule is currently turned on (value is always 1; status is carried in the status label, one of running/stopped)",
+			[]string{"schedule_name", "location", "status"},
+			nil,
+		),
+		scheduleTickStatusDesc: prometheus.NewDesc(
+			"dagster_schedule_last_tick_status",
+			"Status of a schedule's most recent tick (value is always 1; status is carried in the status label, one of started/skipped/success/failure)",
+			[]string{"schedule_name", "location", "status"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -151,6 +167,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.lastRunDurationDesc
 	ch <- c.activeRunDurationDesc
 	ch <- c.concurrencyKeyBacklogDesc
+	ch <- c.scheduleStatusDesc
+	ch <- c.scheduleTickStatusDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -161,6 +179,8 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectScrapeHealth(c, ch)
 	reflectCodeLocationStatus(c, ch)
 	reflectConcurrencyKeyBacklog(c, ch)
+	reflectScheduleStatus(c, ch)
+	reflectScheduleTickStatus(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

@@ -1,4 +1,4 @@
-query GetJobsPerLocation {
+query GetDefinitionsRoster {
   repositoriesOrError {
     __typename
     ... on RepositoryConnection {
@@ -9,6 +9,17 @@ query GetJobsPerLocation {
         }
         jobs {
           name
+        }
+        schedules {
+          name
+          cronSchedule
+          scheduleState {
+            status
+            ticks(limit: 1) {
+              status
+              timestamp
+            }
+          }
         }
       }
     }
