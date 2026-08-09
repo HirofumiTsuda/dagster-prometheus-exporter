@@ -71,8 +71,19 @@ jobs:
           echo "$READYZ" | grep -q '"status":"OK"' || { echo "::error::exporter is not ready against the real Dagster instance"; exit 1; }
 
           echo "--- /metrics (dagster_active_runs) ---"
-          METRICS=$(curl -sf http://localhost:9101/metrics)
-          echo "$METRICS" | grep '^dagster_active_runs{' || { echo "::error::no dagster_active_runs series found — exporter isn't reporting real data"; exit 1; }
+          # /readyz being OK only proves live Dagster connectivity, not that
+          # a background scrape has completed yet — the HTTP server and the
+          # scraper goroutine start concurrently (see internal/server.go),
+          # and the readinessProbe is /healthz (unconditionally 200), so the
+          # pod can be Ready before the first scrape lands. Poll for up to
+          # ~40s (a bit more than DAGSTER_SCRAPING_INTERVAL_SECONDS' 15s
+          # default) instead of asserting on a single sample.
+          for i in $(seq 1 20); do
+            METRICS=$(curl -sf http://localhost:9101/metrics)
+            echo "$METRICS" | grep -q '^dagster_active_runs{' && break
+            sleep 2
+          done
+          echo "$METRICS" | grep '^dagster_active_runs{' || { echo "::error::no dagster_active_runs series found after waiting for a scrape — exporter isn't reporting real data"; exit 1; }
 
           kill "$PORT_FORWARD_PID"
 
