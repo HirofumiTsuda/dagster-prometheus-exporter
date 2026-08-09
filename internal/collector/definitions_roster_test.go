@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBuildKnownJobs(t *testing.T) {
+	var resp GraphQLDefinitionsRosterResponse
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"data": {
+			"repositoriesOrError": {
+				"__typename": "RepositoryConnection",
+				"nodes": [
+					{
+						"name": "repo_a", "location": {"name": "loc_a"},
+						"jobs": [{"name": "job_1"}, {"name": "job_2"}],
+						"schedules": []
+					},
+					{
+						"name": "repo_b", "location": {"name": "loc_b"},
+						"jobs": [{"name": "job_1"}],
+						"schedules": []
+					}
+				]
+			}
+		}
+	}`), &resp))
+
+	known := buildKnownJobs(&resp)
+
+	assert.Len(t, known, 3, "job_1 in two different locations should be two distinct entries")
+	assert.Contains(t, known, JobKey{JobName: "job_1", LocationName: "loc_a"})
+	assert.Contains(t, known, JobKey{JobName: "job_2", LocationName: "loc_a"})
+	assert.Contains(t, known, JobKey{JobName: "job_1", LocationName: "loc_b"})
+}
 
 func TestCollectDefinitionsRosterSeedsAndPrunesJobs(t *testing.T) {
 	call := 0

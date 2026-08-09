@@ -21,6 +21,33 @@ type scheduleTickEntry struct {
 	timestamp float64
 }
 
+// buildScheduleState extracts each schedule's enabled/disabled status and
+// most recent tick from a definitions-roster response. Pulled out of
+// CollectDefinitionsRoster as its own pure function so it can be
+// unit-tested directly, without an HTTP mock.
+func buildScheduleState(resp *GraphQLDefinitionsRosterResponse) (map[ScheduleKey]string, map[ScheduleKey]scheduleTickEntry) {
+	status := make(map[ScheduleKey]string)
+	tickStatus := make(map[ScheduleKey]scheduleTickEntry)
+
+	for _, repo := range resp.Data.RepositoriesOrError.Nodes {
+		for _, schedule := range repo.Schedules {
+			key := ScheduleKey{ScheduleName: schedule.Name, LocationName: repo.Location.Name}
+			status[key] = schedule.ScheduleState.Status
+
+			// ticks(limit: 1) returns the single most recent tick, newest
+			// first; a schedule that has never fired yet returns an empty
+			// list, and simply has no entry here (no seeded value — same
+			// rationale as dagster_last_run_info for a job that's never run).
+			if len(schedule.ScheduleState.Ticks) > 0 {
+				tick := schedule.ScheduleState.Ticks[0]
+				tickStatus[key] = scheduleTickEntry{status: tick.Status, timestamp: tick.Timestamp}
+			}
+		}
+	}
+
+	return status, tickStatus
+}
+
 // reflectScheduleStatus emits dagster_schedule_status: whether a schedule
 // is currently turned on (RUNNING) or off (STOPPED) in Dagster. This is
 // refetched in full on every scrape (unlike dagster_last_run_info, which
