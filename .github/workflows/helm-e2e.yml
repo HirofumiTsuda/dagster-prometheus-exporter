@@ -3,24 +3,21 @@ name: Helm e2e (kind)
 # Complements helm-lint.yml: that catches template syntax errors, this
 # actually installs the chart into a real cluster against a real Dagster
 # instance and asserts the exporter gets real data — see issue #44.
+#
+# Deliberately not a pull_request/push trigger: this also exercises the Go
+# server itself (the exporter image is always built fresh from the current
+# checkout, so any internal/**/cmd/** regression would show up here too),
+# not just chart/docker/dev changes — but a full kind cluster spin-up per
+# PR is heavy, and (being a real end-to-end test against real
+# infrastructure) more prone to transient flakiness than the unit-test-level
+# checks in ci.yml, so it isn't a required status check either. Scheduled +
+# on-demand instead: catches real regressions over time without slowing
+# down or blocking every PR.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "charts/**"
-      - "docker/**"
-      - "dev/dagster_workspace/**"
-      - "dev/kubernetes/**"
-      - ".github/workflows/helm-e2e.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "charts/**"
-      - "docker/**"
-      - "dev/dagster_workspace/**"
-      - "dev/kubernetes/**"
-      - ".github/workflows/helm-e2e.yml"
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
 
 jobs:
   e2e:
