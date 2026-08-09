@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/HirofumiTsuda/dagster-prometheus-exporter)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/releases/latest)
 [![CI](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml)
 [![Helm e2e](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dagster-prometheus-exporter)](https://artifacthub.io/packages/helm/dagster-prometheus-exporter/dagster-prometheus-exporter)
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
 [![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
@@ -224,11 +225,11 @@ docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter .
 docker run -p 9101:9101 -e DAGSTER_GRAPHQL_ENDPOINT=http://dagster:3000/graphql dagster-prometheus-exporter
 ```
 
-Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter), published as an OCI artifact on GHCR:
+Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter) ([Artifact Hub listing](https://artifacthub.io/packages/helm/dagster-prometheus-exporter/dagster-prometheus-exporter)), published as an OCI artifact on GHCR:
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.0 \
+  --version 0.1.2 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
