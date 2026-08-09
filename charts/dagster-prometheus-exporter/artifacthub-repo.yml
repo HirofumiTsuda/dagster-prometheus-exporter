@@ -1,0 +1,9 @@
+# Verifies ownership of the Artifact Hub repository registered at
+# https://artifacthub.io/packages/helm/dagster-prometheus-exporter/dagster-prometheus-exporter
+# (repository URL: oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter).
+#
+# This file itself isn't bundled into the packaged chart; helm-publish.yml
+# pushes it as a separate OCI artifact tagged `artifacthub.io` alongside each
+# chart release, which is how Artifact Hub expects to find it for an
+# OCI-hosted repository. See https://artifacthub.io/docs/topics/repositories/#ownership-claim
+repositoryID: 79e3dc3e-9ae9-4404-8c12-6b044c2c3684

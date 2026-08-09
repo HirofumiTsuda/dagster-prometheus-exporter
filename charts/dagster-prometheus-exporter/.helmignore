@@ -6,3 +6,5 @@
 *.tmp
 *.bak
 *.swp
+# Pushed separately as its own OCI artifact by helm-publish.yml, not chart content.
+artifacthub-repo.yml

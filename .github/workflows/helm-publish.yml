@@ -48,3 +48,12 @@ jobs:
         run: |
           chart_package="$(ls dagster-prometheus-exporter-*.tgz)"
           helm push "$chart_package" "$OCI_REPO"
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Push Artifact Hub repository metadata
+        run: |
+          oras push \
+            "${REGISTRY}/hirofumitsuda/charts/dagster-prometheus-exporter:artifacthub.io" \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            "$CHART_PATH/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml"
