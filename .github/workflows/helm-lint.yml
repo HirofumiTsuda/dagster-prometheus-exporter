@@ -24,6 +24,29 @@ jobs:
 
       - run: helm template charts/dagster-prometheus-exporter
 
+      - name: Verify the default image tag exists on GHCR
+        # Regression check for the appVersion/published-tag mismatch that
+        # slipped through undetected because the e2e test always overrides
+        # image.tag (see dev/kubernetes/exporter-e2e-values.yaml) and never
+        # exercises this default-value path. Renders with no overrides,
+        # same as a `helm install` with no --set image.tag, and confirms the
+        # resulting image:tag actually exists on GHCR (anonymous, no auth
+        # needed since the image is public).
+        run: |
+          image_ref="$(helm template charts/dagster-prometheus-exporter | grep -m1 'image:' | sed -E 's/.*image: "?([^"]+)"?/\1/')"
+          repo="${image_ref%%:*}"
+          tag="${image_ref##*:}"
+          registry_path="${repo#ghcr.io/}"
+          token="$(curl -sL "https://ghcr.io/token?scope=repository:${registry_path}:pull" | jq -r .token)"
+          status="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \
+            "https://ghcr.io/v2/${registry_path}/manifests/${tag}")"
+          echo "GET manifest for $image_ref -> HTTP $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Default chart image '$image_ref' does not exist on GHCR (HTTP $status). Chart.yaml's appVersion likely doesn't match a real published Docker tag (check for a stray 'v' prefix)." >&2
+            exit 1
+          fi
+
       - name: Render with a representative set of overrides
         run: |
           helm template charts/dagster-prometheus-exporter \
