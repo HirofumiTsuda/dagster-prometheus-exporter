@@ -9,6 +9,10 @@ query GetRuns($statuses: [RunStatus!], $updatedAfter: Float, $cursor: String, $l
         creationTime
         updateTime
         endTime
+        tags {
+          key
+          value
+        }
         repositoryOrigin {
           repositoryName
           repositoryLocationName

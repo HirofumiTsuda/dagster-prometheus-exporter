@@ -77,7 +77,7 @@ The exporter is a single Go binary with no external state store — everything i
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.
 
-The four collectors (job/location roster, active runs, completed runs, code-location load status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`. The code-location load status collector is intentionally independent of the job/location roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` below.
+The four collectors (job/location roster, active runs, completed runs, code-location load status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`. The code-location load status collector is intentionally independent of the job/location roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` below. `dagster_run_queue_concurrency_key_backlog` (below) is folded into the active-runs collector instead of getting its own: it only needs QUEUED runs' tags, which that collector already fetches on every page, so a separate query would just re-fetch the same runs a second time for no reason.
 
 Fetching completed runs is incremental, not a full re-scan every cycle: after the first scrape (which backfills `LOOKBACK_WINDOW_MINUTES`), each subsequent scrape only asks Dagster for runs updated since the last-seen watermark (minus a small safety margin, to tolerate a run's DB write committing slightly after its `updateTime`). Any single fetch — the initial backfill or an unusually large batch of updates — pages through `runsOrError` via cursor (`RUNS_PAGE_SIZE` per page) and folds each page into the in-memory counters as it arrives, rather than buffering the full result set in memory first.
 
@@ -93,6 +93,7 @@ The per-job metrics are labeled with `job_name` and `location` (the Dagster code
 | `dagster_last_run_info` | Gauge | `job_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster — it does not disappear just because nothing has completed recently. Use the `status` label to tell success from failure, e.g. in a Grafana table panel. |
 | `dagster_last_run_duration_seconds` | Gauge | `job_name`, `location`, `status` | Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`. |
 | `dagster_code_location_load_error` | Gauge | `location` | `1` if that code location most recently failed to load (e.g. a broken import in user code), `0` if it loaded successfully. A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality. |
+| `dagster_run_queue_concurrency_key_backlog` | Gauge | `concurrency_key` | Number of runs currently `QUEUED` because of a tag-based run-queue concurrency limit (`dagster.yaml`'s `concurrency.runs.tag_concurrency_limits`), per `dagster/concurrency_key` tag value. Not job/location-scoped, since a concurrency key can be shared across jobs. Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would answer this directly, but it doesn't — it's backed by a separate op/step "pool" concurrency store and reports `0` for run-level tag-based backlog regardless of how many runs are actually queued behind a key, so this is computed by reading each `QUEUED` run's own tags instead. A concurrency key is zero-filled (not dropped) once its backlog clears, for the same reason as `dagster_active_runs`: a missing series and a `0` mean different things. |
 
 ### Exporter self-health
 
@@ -124,6 +125,8 @@ dagster_last_run_info{job_name="heavy_job",location="dev-dagster-workspace",stat
 dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 1
 
 dagster_last_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 32.34893083572388
+
+dagster_run_queue_concurrency_key_backlog{concurrency_key="heavy_limit"} 3
 ```
 
 ### PromQL examples
@@ -151,6 +154,9 @@ dagster_active_run_duration_seconds{status="queued"} > 600
 
 # Slowest jobs by their most recent run duration
 topk(5, dagster_last_run_duration_seconds)
+
+# Which concurrency keys currently have a run-queue backlog
+dagster_run_queue_concurrency_key_backlog > 0
 ```
 
 ## Endpoints
@@ -280,6 +286,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Exporter self-health metrics (scrape duration/errors)
 - [x] Exporter build info metric
 - [x] Code location load error visibility
+- [x] Run queue concurrency-key backlog
 - [ ] Schedule tick status
 - [ ] Sensor / asset materialization metrics
 - [x] Published container image / tagged release

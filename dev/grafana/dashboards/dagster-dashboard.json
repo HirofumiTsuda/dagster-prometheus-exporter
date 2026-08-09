@@ -238,6 +238,22 @@
       }
     },
     {
+      "title": "Run Queue Backlog by Concurrency Key",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_run_queue_concurrency_key_backlog",
+          "legendFormat": "{{concurrency_key}}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      }
+    },
+    {
       "title": "Broken Code Locations",
       "type": "stat",
       "targets": [

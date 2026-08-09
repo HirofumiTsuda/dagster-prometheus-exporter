@@ -23,9 +23,11 @@ type DagsterCollector struct {
 	codeLocationLoadErrorDesc *prometheus.Desc
 	lastRunDurationDesc       *prometheus.Desc
 	activeRunDurationDesc     *prometheus.Desc
+	concurrencyKeyBacklogDesc *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
+	concurrencyKeyBacklog   map[string]int
 	processedRuns           *ttlcache.Cache[string, struct{}]
 	lookbackWindow          time.Duration
 	knownJobs               map[JobKey]struct{}
@@ -119,8 +121,14 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 		),
 		activeRunDurationDesc: prometheus.NewDesc(
 			"dagster_active_run_duration_seconds",
-			"Elapsed time (now - creationTime) of the longest-waiting/longest-running active run per job and status; 0 if there are no active runs in that group",
+			"Elapsed time (now - updateTime) of the longest-waiting/longest-running active run per job and status; 0 if there are no active runs in that group",
 			[]string{"job_name", "location", "status"},
+			nil,
+		),
+		concurrencyKeyBacklogDesc: prometheus.NewDesc(
+			"dagster_run_queue_concurrency_key_backlog",
+			"Number of runs currently QUEUED because of a tag-based run-queue concurrency limit, per concurrency_key",
+			[]string{"concurrency_key"},
 			nil,
 		),
 		processedRuns:                cache,
@@ -142,6 +150,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.codeLocationLoadErrorDesc
 	ch <- c.lastRunDurationDesc
 	ch <- c.activeRunDurationDesc
+	ch <- c.concurrencyKeyBacklogDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -151,6 +160,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectLastRun(c, ch)
 	reflectScrapeHealth(c, ch)
 	reflectCodeLocationStatus(c, ch)
+	reflectConcurrencyKeyBacklog(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }
