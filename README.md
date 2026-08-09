@@ -320,7 +320,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Run queue concurrency-key backlog
 - [x] Schedule tick status
 - [x] Sensor tick status
-- [ ] Asset materialization metrics
+- [ ] Asset materialization metrics — several open design questions (metric shape, `asset_key` label encoding, collector structure); see [#56](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/56)
 - [x] Published container image / tagged release
 - [x] Helm chart for Kubernetes deployment
 
