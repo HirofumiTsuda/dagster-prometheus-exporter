@@ -2,6 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/HirofumiTsuda/dagster-prometheus-exporter)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/releases/latest)
 [![CI](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/ci.yml)
+[![Helm e2e](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml)
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
 [![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
@@ -282,6 +283,35 @@ dagster_code_location_load_error{location="dev-dagster-location"} 0
 ### Testing schedule/sensor tick status
 
 Unlike the broken-code-location fixture above, these aren't opt-in: `dev/dagster_workspace/job.py` defines `quick_job_schedule` (cron `* * * * *`, `default_status=DefaultScheduleStatus.RUNNING`) and `quick_job_sensor` (`minimum_interval_seconds=30`, `default_status=DefaultSensorStatus.RUNNING`, always returns a `SkipReason`) against a near-instant job, so the standard dev stack (`docker compose up`) starts ticking both automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status`/`dagster_sensor_status`/`dagster_sensor_last_tick_status` report real data within about a minute of startup.
+
+### Testing the Helm chart against a real Dagster (kind)
+
+`.github/workflows/helm-e2e.yml` (status: see the badge at the top of this README) installs the chart into a [kind](https://kind.sigs.k8s.io/) cluster against a real Dagster instance and asserts `/readyz`/`/metrics` report real data — `helm lint`/`helm template` (in `helm-lint.yml`) only catch template syntax errors, not "does this chart actually work," and since the exporter image is always built fresh from the current checkout, this also exercises the Go server itself, not just the chart. The Dagster instance is a plain Deployment+Service (`dev/kubernetes/dagster-deployment.yaml`, running the same `docker/dagster-dev.Dockerfile` image as the `docker compose` dev stack) — a CI-only test fixture, not part of the chart itself. Both it and the exporter image are always built from the local checkout, never pulled from a registry, so the test validates the current state of `main`, not whatever was last published.
+
+Runs daily on a schedule plus on-demand (`workflow_dispatch`), not on every push/PR: a full kind cluster spin-up is heavy to run per-PR, and being a real end-to-end test against real infrastructure, it's more prone to transient flakiness than the unit-test-level checks in `ci.yml` — so it's deliberately not a required status check either.
+
+To reproduce locally:
+
+```sh
+kind create cluster --name dagster-exporter-e2e
+
+docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter-e2e:exporter .
+docker build -f docker/dagster-dev.Dockerfile -t dagster-prometheus-exporter-e2e:dagster .
+kind load docker-image dagster-prometheus-exporter-e2e:exporter dagster-prometheus-exporter-e2e:dagster \
+  --name dagster-exporter-e2e
+
+kubectl apply -f dev/kubernetes/dagster-deployment.yaml
+kubectl rollout status deployment/dagster --timeout=120s
+
+helm install exporter-e2e charts/dagster-prometheus-exporter \
+  -f dev/kubernetes/exporter-e2e-values.yaml --wait --timeout=120s
+
+kubectl port-forward svc/exporter-e2e-dagster-prometheus-exporter 9101:9101 &
+curl http://localhost:9101/readyz
+curl http://localhost:9101/metrics
+
+kind delete cluster --name dagster-exporter-e2e
+```
 
 ### Running tests
 
