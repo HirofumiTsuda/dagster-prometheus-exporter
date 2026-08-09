@@ -21,6 +21,16 @@ query GetDefinitionsRoster {
             }
           }
         }
+        sensors {
+          name
+          sensorState {
+            status
+            ticks(limit: 1) {
+              status
+              timestamp
+            }
+          }
+        }
       }
     }
     ... on PythonError {

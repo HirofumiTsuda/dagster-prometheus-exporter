@@ -26,12 +26,16 @@ type DagsterCollector struct {
 	concurrencyKeyBacklogDesc *prometheus.Desc
 	scheduleStatusDesc        *prometheus.Desc
 	scheduleTickStatusDesc    *prometheus.Desc
+	sensorStatusDesc          *prometheus.Desc
+	sensorTickStatusDesc      *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
 	concurrencyKeyBacklog   map[string]int
 	scheduleStatus          map[ScheduleKey]string
 	scheduleTickStatus      map[ScheduleKey]scheduleTickEntry
+	sensorStatus            map[SensorKey]string
+	sensorTickStatus        map[SensorKey]sensorTickEntry
 	processedRuns           *ttlcache.Cache[string, struct{}]
 	lookbackWindow          time.Duration
 	knownJobs               map[JobKey]struct{}
@@ -147,6 +151,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"schedule_name", "location", "status"},
 			nil,
 		),
+		sensorStatusDesc: prometheus.NewDesc(
+			"dagster_sensor_status",
+			"Whether a sensor is currently turned on (value is always 1; status is carried in the status label, one of running/stopped)",
+			[]string{"sensor_name", "location", "status"},
+			nil,
+		),
+		sensorTickStatusDesc: prometheus.NewDesc(
+			"dagster_sensor_last_tick_status",
+			"Status of a sensor's most recent tick (value is always 1; status is carried in the status label, one of started/skipped/success/failure)",
+			[]string{"sensor_name", "location", "status"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -169,6 +185,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.concurrencyKeyBacklogDesc
 	ch <- c.scheduleStatusDesc
 	ch <- c.scheduleTickStatusDesc
+	ch <- c.sensorStatusDesc
+	ch <- c.sensorTickStatusDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -181,6 +199,8 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectConcurrencyKeyBacklog(c, ch)
 	reflectScheduleStatus(c, ch)
 	reflectScheduleTickStatus(c, ch)
+	reflectSensorStatus(c, ch)
+	reflectSensorTickStatus(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }
