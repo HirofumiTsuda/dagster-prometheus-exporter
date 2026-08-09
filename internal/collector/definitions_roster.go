@@ -23,13 +23,15 @@ func buildKnownJobs(resp *GraphQLDefinitionsRosterResponse) map[JobKey]struct{} 
 	return known
 }
 
-// CollectDefinitionsRoster fetches the full jobs+schedules roster in one
-// GraphQL call (repositoriesOrError exposes both as sibling fields on
-// Repository) and updates every piece of exporter state derived from "what
-// currently exists": known jobs (for completed-run counter/last-run-status
-// pruning/seeding, unchanged from before schedules were added), and known
-// schedules with their current enabled/disabled status and most recent
-// tick (see buildScheduleState in schedules.go).
+// CollectDefinitionsRoster fetches the full jobs+schedules+sensors roster
+// in one GraphQL call (repositoriesOrError exposes all three as sibling
+// fields on Repository) and updates every piece of exporter state derived
+// from "what currently exists": known jobs (for completed-run
+// counter/last-run-status pruning/seeding, unchanged from before
+// schedules/sensors were added), known schedules with their current
+// enabled/disabled status and most recent tick (see buildScheduleState in
+// schedules.go), and the same for sensors (see buildSensorState in
+// sensors.go).
 func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	req := getDefinitionsRosterRequest()
 
@@ -41,6 +43,7 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 
 	knownJobs := buildKnownJobs(resp)
 	scheduleStatus, scheduleTickStatus := buildScheduleState(resp)
+	sensorStatus, sensorTickStatus := buildSensorState(resp)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -48,6 +51,8 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	c.knownJobs = knownJobs
 	c.scheduleStatus = scheduleStatus
 	c.scheduleTickStatus = scheduleTickStatus
+	c.sensorStatus = sensorStatus
+	c.sensorTickStatus = sensorTickStatus
 
 	pruneCompletedRunsCounter(c, knownJobs)
 	seedCompletedRunsCounter(c, knownJobs)

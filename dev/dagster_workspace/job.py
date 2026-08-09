@@ -1,6 +1,15 @@
 import time
 
-from dagster import DefaultScheduleStatus, ScheduleDefinition, job, op
+from dagster import (
+    DefaultScheduleStatus,
+    DefaultSensorStatus,
+    ScheduleDefinition,
+    SensorEvaluationContext,
+    SkipReason,
+    job,
+    op,
+    sensor,
+)
 
 
 @op
@@ -47,3 +56,18 @@ every_minute_schedule = ScheduleDefinition(
 )
 
 schedules = [every_minute_schedule]
+
+
+# default_status=RUNNING, same rationale as the schedule above. Always
+# skips (rather than launching quick_job) so its ticks are deterministically
+# SKIPPED — a distinct outcome from the schedule's SUCCESS ticks, useful for
+# exercising dagster_sensor_status/dagster_sensor_last_tick_status with more
+# than one status value present.
+@sensor(job=quick_job, minimum_interval_seconds=30, default_status=DefaultSensorStatus.RUNNING)
+def quick_job_sensor(context: SensorEvaluationContext):
+    return SkipReason(
+        "dev fixture: intentionally always skips, for exercising dagster_sensor_last_tick_status"
+    )
+
+
+sensors = [quick_job_sensor]

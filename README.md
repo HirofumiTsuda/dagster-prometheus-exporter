@@ -79,7 +79,7 @@ Because scraping (writing state) and metrics rendering (reading state) are decou
 
 The four collectors (definitions roster, active runs, completed runs, code-location load status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`. The code-location load status collector is intentionally independent of the definitions-roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` below. `dagster_run_queue_concurrency_key_backlog` (below) is folded into the active-runs collector instead of getting its own: it only needs QUEUED runs' tags, which that collector already fetches on every page, so a separate query would just re-fetch the same runs a second time for no reason.
 
-The definitions-roster collector is named for what it actually fetches: `repositoriesOrError`, which exposes jobs and schedules as independent sibling fields on Dagster's `Repository` type (not schedules-reachable-only-via-jobs), so both come back from one query. It builds the known-jobs set used to prune/seed completed-run counters and last-run status (unchanged since before schedules existed), plus each schedule's enabled/disabled state and most recent tick (`dagster_schedule_status`/`dagster_schedule_last_tick_status`).
+The definitions-roster collector is named for what it actually fetches: `repositoriesOrError`, which exposes jobs, schedules, and sensors as independent sibling fields on Dagster's `Repository` type (not reachable only via jobs), so all three come back from one query. It builds the known-jobs set used to prune/seed completed-run counters and last-run status (unchanged since before schedules/sensors existed), plus each schedule's and sensor's enabled/disabled state and most recent tick (`dagster_schedule_status`/`dagster_schedule_last_tick_status`, `dagster_sensor_status`/`dagster_sensor_last_tick_status`). Dagster's `Schedule.scheduleState` and `Sensor.sensorState` are both the same `InstigationState` type under the hood, so the two pairs of metrics are structurally identical.
 
 Fetching completed runs is incremental, not a full re-scan every cycle: after the first scrape (which backfills `LOOKBACK_WINDOW_MINUTES`), each subsequent scrape only asks Dagster for runs updated since the last-seen watermark (minus a small safety margin, to tolerate a run's DB write committing slightly after its `updateTime`). Any single fetch — the initial backfill or an unusually large batch of updates — pages through `runsOrError` via cursor (`RUNS_PAGE_SIZE` per page) and folds each page into the in-memory counters as it arrives, rather than buffering the full result set in memory first.
 
@@ -98,6 +98,8 @@ The per-job metrics are labeled with `job_name` and `location` (the Dagster code
 | `dagster_run_queue_concurrency_key_backlog` | Gauge | `concurrency_key` | Number of runs currently `QUEUED` because of a tag-based run-queue concurrency limit (`dagster.yaml`'s `concurrency.runs.tag_concurrency_limits`), per `dagster/concurrency_key` tag value. Not job/location-scoped, since a concurrency key can be shared across jobs. Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would answer this directly, but it doesn't — it's backed by a separate op/step "pool" concurrency store and reports `0` for run-level tag-based backlog regardless of how many runs are actually queued behind a key, so this is computed by reading each `QUEUED` run's own tags instead. A concurrency key is zero-filled (not dropped) once its backlog clears, for the same reason as `dagster_active_runs`: a missing series and a `0` mean different things. |
 | `dagster_schedule_status` | Gauge | `schedule_name`, `location`, `status` | Always `1`; an "info" metric (same pattern as `dagster_last_run_info`) reporting whether a schedule is currently turned on (`running`) or off (`stopped`) in Dagster. Refetched from scratch on every scrape, unlike `dagster_last_run_info` — a removed schedule just isn't in the response anymore, no pruning needed. |
 | `dagster_schedule_last_tick_status` | Gauge | `schedule_name`, `location`, `status` | Always `1`; status of a schedule's most recently observed tick (`started`, `skipped`, `success`, or `failure`). A schedule that has never ticked yet has no series — no seeded value, same rationale as `dagster_last_run_info` for a job that's never run. |
+| `dagster_sensor_status` | Gauge | `sensor_name`, `location`, `status` | Same as `dagster_schedule_status`, for sensors: `running`/`stopped`. |
+| `dagster_sensor_last_tick_status` | Gauge | `sensor_name`, `location`, `status` | Same as `dagster_schedule_last_tick_status`, for sensors. Note a sensor tick that decides not to launch anything is `skipped`, not a lack of data — Dagster's sensor daemon evaluates on a fixed interval regardless of whether there's anything to do, so `skipped` is a normal, common outcome, not necessarily a problem. |
 
 ### Exporter self-health
 
@@ -135,6 +137,10 @@ dagster_run_queue_concurrency_key_backlog{concurrency_key="heavy_limit"} 3
 dagster_schedule_status{schedule_name="daily_refresh",location="dev-dagster-workspace",status="running"} 1
 
 dagster_schedule_last_tick_status{schedule_name="daily_refresh",location="dev-dagster-workspace",status="success"} 1
+
+dagster_sensor_status{sensor_name="new_file_sensor",location="dev-dagster-workspace",status="running"} 1
+
+dagster_sensor_last_tick_status{sensor_name="new_file_sensor",location="dev-dagster-workspace",status="skipped"} 1
 ```
 
 ### PromQL examples
@@ -171,6 +177,13 @@ dagster_run_queue_concurrency_key_backlog > 0
 dagster_schedule_status{status="running"} == 1
 and on (schedule_name, location)
 dagster_schedule_last_tick_status{status!="success"} == 1
+
+# Sensors that are turned on but whose last tick was a hard failure
+# (unlike schedules, "skipped" is a normal, common outcome for a sensor —
+# it just means nothing matched that evaluation — so this only flags failure)
+dagster_sensor_status{status="running"} == 1
+and on (sensor_name, location)
+dagster_sensor_last_tick_status{status="failure"} == 1
 ```
 
 ## Endpoints
@@ -266,9 +279,9 @@ dagster_code_location_load_error{location="broken_location"} 1
 dagster_code_location_load_error{location="dev-dagster-location"} 0
 ```
 
-### Testing schedule tick status
+### Testing schedule/sensor tick status
 
-Unlike the broken-code-location fixture above, this one isn't opt-in: `dev/dagster_workspace/job.py` defines `quick_job_schedule` (cron `* * * * *`, `default_status=DefaultScheduleStatus.RUNNING`) against a near-instant job, so the standard dev stack (`docker compose up`) starts ticking it automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status` report real data within about a minute of startup.
+Unlike the broken-code-location fixture above, these aren't opt-in: `dev/dagster_workspace/job.py` defines `quick_job_schedule` (cron `* * * * *`, `default_status=DefaultScheduleStatus.RUNNING`) and `quick_job_sensor` (`minimum_interval_seconds=30`, `default_status=DefaultSensorStatus.RUNNING`, always returns a `SkipReason`) against a near-instant job, so the standard dev stack (`docker compose up`) starts ticking both automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status`/`dagster_sensor_status`/`dagster_sensor_last_tick_status` report real data within about a minute of startup.
 
 ### Running tests
 
@@ -306,7 +319,8 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Code location load error visibility
 - [x] Run queue concurrency-key backlog
 - [x] Schedule tick status
-- [ ] Sensor / asset materialization metrics
+- [x] Sensor tick status
+- [ ] Asset materialization metrics
 - [x] Published container image / tagged release
 - [x] Helm chart for Kubernetes deployment
 

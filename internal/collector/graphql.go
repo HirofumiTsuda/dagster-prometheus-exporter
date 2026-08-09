@@ -160,10 +160,12 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 // GraphQLDefinitionsRosterResponse is the shape of repositoriesOrError used
 // to build the exporter's view of "what exists": known jobs (JobKey,
 // pruning/seeding for completed-run counters and last-run status) and known
-// schedules with their most recent tick, in one fetch. Dagster's Repository
-// type exposes jobs and schedules as independent sibling fields (not
-// schedules-via-jobs), so both can be requested together without any
-// per-job/per-schedule follow-up query.
+// schedules/sensors with their most recent tick, in one fetch. Dagster's
+// Repository type exposes jobs, schedules, and sensors as independent
+// sibling fields (not reachable only via jobs), so all three can be
+// requested together without any per-job/per-schedule/per-sensor
+// follow-up query. Schedule.scheduleState and Sensor.sensorState are both
+// InstigationState under the hood, hence the identical status/ticks shape.
 type GraphQLDefinitionsRosterResponse struct {
 	Data struct {
 		RepositoriesOrError struct {
@@ -187,6 +189,16 @@ type GraphQLDefinitionsRosterResponse struct {
 						} `json:"ticks"`
 					} `json:"scheduleState"`
 				} `json:"schedules"`
+				Sensors []struct {
+					Name        string `json:"name"`
+					SensorState struct {
+						Status string `json:"status"`
+						Ticks  []struct {
+							Status    string  `json:"status"`
+							Timestamp float64 `json:"timestamp"`
+						} `json:"ticks"`
+					} `json:"sensorState"`
+				} `json:"sensors"`
 			} `json:"nodes"`
 			Message string   `json:"message"`
 			Stack   []string `json:"stack"`
