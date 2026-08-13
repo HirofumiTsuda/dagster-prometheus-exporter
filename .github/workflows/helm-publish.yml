@@ -49,7 +49,7 @@ jobs:
           chart_package="$(ls dagster-prometheus-exporter-*.tgz)"
           helm push "$chart_package" "$OCI_REPO"
 
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
 
       - name: Push Artifact Hub repository metadata
         run: |
