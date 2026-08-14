@@ -44,6 +44,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Keeps go.mod's direct/indirect split honest. Nothing else in CI
+      # reads it, so without this it drifts silently as dependencies come
+      # and go.
+      - name: Check go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod/go.sum are not tidy. Run 'go mod tidy' and commit the result."
+            exit 1
+          fi
+
       - run: go build ./...
 
       - run: go vet ./...
