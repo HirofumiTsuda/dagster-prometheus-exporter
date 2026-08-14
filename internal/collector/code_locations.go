@@ -2,7 +2,6 @@ package collector
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 
@@ -23,12 +22,11 @@ func CollectCodeLocationStatus(ctx context.Context, c *DagsterCollector) error {
 		return err
 	}
 
-	if resp.Data.WorkspaceOrError.Typename == "PythonError" {
-		err := fmt.Errorf("dagster reported a workspace load error: %s", resp.Data.WorkspaceOrError.Message)
-		log.Printf("failed to collect code location status from dagster: %v\n%s", err, strings.Join(resp.Data.WorkspaceOrError.Stack, "\n"))
-		return err
-	}
-
+	// A workspace-level PythonError is already rejected by getWorkspaceStatus
+	// (see unexpectedUnionMember), so reaching here means locationEntries is
+	// trustworthy. The per-entry check below is a different thing entirely:
+	// it's the metric itself, reporting which individual code locations
+	// failed to load while the workspace query as a whole succeeded.
 	loadErrors := make(map[string]bool, len(resp.Data.WorkspaceOrError.LocationEntries))
 	for _, entry := range resp.Data.WorkspaceOrError.LocationEntries {
 		failed := entry.LocationOrLoadError.Typename == "PythonError"
