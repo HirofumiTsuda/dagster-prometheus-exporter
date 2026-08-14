@@ -24,6 +24,9 @@ jobs:
               - "**.go"
               - go.mod
               - go.sum
+              # golangci-lint's version lives here now, so a bump has to
+              # re-run the lint job.
+              - .tool-versions
               - .github/workflows/ci.yml
             python:
               - "**.py"
@@ -77,10 +80,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # version-file reads .tool-versions, the same file mise reads locally,
+      # so there's one place to bump golangci-lint rather than a CI pin that
+      # local installs drift away from. It requires the default binary
+      # install-mode (goinstall doesn't support it), which is what
+      # golangci-lint recommends anyway — official release binaries instead
+      # of a build against whatever Go version happens to be present.
       - uses: golangci/golangci-lint-action@v9
         with:
-          install-mode: goinstall
-          version: v2.12.2
+          version-file: .tool-versions
 
   python-lint:
     needs: changes
