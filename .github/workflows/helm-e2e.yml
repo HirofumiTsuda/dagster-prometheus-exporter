@@ -29,7 +29,11 @@ jobs:
         with:
           cluster_name: dagster-exporter-e2e
 
-      - uses: azure/setup-helm@v5
+      # Installs helm at the version in .tool-versions, so CI and local
+      # development run the same one. azure/setup-helm defaults to "latest",
+      # which is not reproducible and drifted a major version away from the
+      # helm used for local chart testing.
+      - uses: jdx/mise-action@v4
 
       - name: Build exporter and Dagster dev images
         run: |

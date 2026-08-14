@@ -5,11 +5,15 @@ on:
     branches: [main]
     paths:
       - "charts/**"
+      # helm's own version lives here now.
+      - ".tool-versions"
       - ".github/workflows/helm-lint.yml"
   pull_request:
     branches: [main]
     paths:
       - "charts/**"
+      # helm's own version lives here now.
+      - ".tool-versions"
       - ".github/workflows/helm-lint.yml"
 
 jobs:
@@ -18,7 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: azure/setup-helm@v5
+      # Installs helm at the version in .tool-versions, so CI and local
+      # development run the same one. azure/setup-helm defaults to "latest",
+      # which is not reproducible and drifted a major version away from the
+      # helm used for local chart testing.
+      - uses: jdx/mise-action@v4
 
       - run: helm lint --strict charts/dagster-prometheus-exporter
 

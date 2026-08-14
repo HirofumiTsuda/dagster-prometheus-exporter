@@ -1,0 +1,19 @@
+# Versions for the tools a developer runs by hand, so a local run matches
+# what CI does. Both previously differed by a major version between the two:
+# golangci-lint was pinned only inside ci.yml (CI v2, local v1), and helm was
+# pinned nowhere at all (azure/setup-helm defaults to "latest", which has been
+# Helm 4 since v4.1.0, while local development was on Helm 3).
+#
+# This file, rather than mise.toml, because golangci-lint-action reads
+# .tool-versions directly via its version-file input. That keeps one file as
+# the source of truth with no glue code: mise reads it locally, and each
+# workflow reads it in CI.
+#
+# Go is deliberately absent: go.mod is already its single source of truth,
+# and actions/setup-go reads it there while also providing module caching.
+#
+# kind, oras and uv are absent too. Their setup actions bake a fixed default
+# into each major tag (kind v0.31.0, oras 1.3.1), so Dependabot moves them
+# deliberately rather than by drift.
+golangci-lint 2.12.2
+helm 4.2.4
