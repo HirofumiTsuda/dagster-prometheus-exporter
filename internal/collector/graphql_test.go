@@ -238,3 +238,49 @@ func TestFetchRunPagesStopsOnAnEmptyPageWhateverThePageSize(t *testing.T) {
 		})
 	}
 }
+
+// The top-level "errors" array is carried by the embedded graphQLErrors
+// struct, so it reaches Go through promoted fields rather than a field
+// declared on each response type. Embedding is supposed to leave the wire
+// format untouched — this checks that it actually does, for each response
+// type, since nothing else in the suite exercises this channel.
+func TestGraphQLTopLevelErrorsAreReported(t *testing.T) {
+	const body = `{"data": {}, "errors": [{"message": "Cannot query field \"nope\""}]}`
+
+	queries := map[string]func(ctx context.Context, endpoint string) error{
+		"runsOrError": func(ctx context.Context, endpoint string) error {
+			_, err := getRuns(ctx, getRunsRequest([]string{"SUCCESS"}, 0, "", 500), endpoint)
+			return err
+		},
+		"repositoriesOrError": func(ctx context.Context, endpoint string) error {
+			_, err := getDefinitionsRoster(ctx, getDefinitionsRosterRequest(), endpoint)
+			return err
+		},
+		"workspaceOrError": func(ctx context.Context, endpoint string) error {
+			_, err := getWorkspaceStatus(ctx, getWorkspaceStatusRequest(), endpoint)
+			return err
+		},
+		"version": func(ctx context.Context, endpoint string) error {
+			_, err := GetVersion(ctx, GetVersionRequest(), endpoint)
+			return err
+		},
+	}
+
+	for name, query := range queries {
+		t.Run(name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte(body))
+				assert.NoError(t, err)
+			}))
+			defer ts.Close()
+
+			err := query(t.Context(), ts.URL)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "Cannot query field",
+				"the GraphQL error message should survive decoding through the embedded struct")
+		})
+	}
+}
