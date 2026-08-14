@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strings"
 )
 
 // closeBody closes an HTTP response body, discarding the error. By this
@@ -17,6 +19,40 @@ import (
 // keeps that intentional discard out of every call site.
 func closeBody(body io.Closer) {
 	_ = body.Close()
+}
+
+// unexpectedUnionMember reports that a GraphQL union resolved to something
+// other than the success type the caller can actually read.
+//
+// Dagster signals query-level failures through the union itself
+// (PythonError, InvalidPipelineRunsFilterError, ...) rather than through
+// GraphQL's top-level "errors" array. A failed query therefore decodes into
+// a perfectly well-formed response whose result list is simply empty, which
+// is indistinguishable from "there is nothing there" unless __typename is
+// checked. Treating that as success used to let one transient Dagster error
+// prune every accumulated series — known jobs, completed-run counters,
+// last-run status, schedules, sensors — while the collector still returned
+// nil and dagster_exporter_last_scrape_success kept reporting 1 (issue #69).
+//
+// Anything that isn't the expected success type is therefore an error,
+// including an absent __typename: every query in queries/ selects
+// __typename, so its absence means the response isn't the shape this code
+// was written against and its emptiness can't be trusted either.
+//
+// stack is logged rather than folded into the error: it's multi-line, only
+// useful for debugging, and the error itself is logged as a single line by
+// the calling collector.
+func unexpectedUnionMember(field, want, got, message string, stack []string) error {
+	if len(stack) > 0 {
+		log.Printf("dagster returned %s for %s:\n%s", got, field, strings.Join(stack, "\n"))
+	}
+	if got == "" {
+		got = "a response with no __typename"
+	}
+	if message == "" {
+		message = "(no message provided)"
+	}
+	return fmt.Errorf("%s returned %s instead of %s: %s", field, got, want, message)
 }
 
 type GraphQLRequest struct {
@@ -154,6 +190,10 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
 	}
 
+	if runsOrError := graphQLResp.Data.RunsOrError; runsOrError.Typename != "Runs" {
+		return nil, unexpectedUnionMember("runsOrError", "Runs", runsOrError.Typename, runsOrError.Message, runsOrError.Stack)
+	}
+
 	return &graphQLResp, nil
 }
 
@@ -252,6 +292,10 @@ func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterG
 		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
 	}
 
+	if repositoriesOrError := graphQLResp.Data.RepositoriesOrError; repositoriesOrError.Typename != "RepositoryConnection" {
+		return nil, unexpectedUnionMember("repositoriesOrError", "RepositoryConnection", repositoriesOrError.Typename, repositoriesOrError.Message, repositoriesOrError.Stack)
+	}
+
 	return &graphQLResp, nil
 }
 
@@ -317,6 +361,10 @@ func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGra
 
 	if len(graphQLResp.Errors) > 0 {
 		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
+	}
+
+	if workspaceOrError := graphQLResp.Data.WorkspaceOrError; workspaceOrError.Typename != "Workspace" {
+		return nil, unexpectedUnionMember("workspaceOrError", "Workspace", workspaceOrError.Typename, workspaceOrError.Message, workspaceOrError.Stack)
 	}
 
 	return &graphQLResp, nil
