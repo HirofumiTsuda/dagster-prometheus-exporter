@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"log"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -18,8 +20,15 @@ type Config struct {
 	RunsUpdatedAfterSafetyMargin time.Duration
 }
 
-// getEnvInt は環境変数 key を int として読み込む。未設定なら def を返す。
-func getEnvInt(key string, def int) (int, error) {
+// getEnvInt reads env var key as an int, returning def when it's unset, and
+// rejects anything outside [minVal, maxVal].
+//
+// The range check is what keeps a bad value from turning into a confusing
+// failure much later: RUNS_PAGE_SIZE=0 slips past fetchRunPages' end-of-
+// pagination test and panics, and a PORT outside the valid range only shows
+// up as a ListenAndServe failure that never names the env var responsible.
+// Failing here means the error says which setting is wrong.
+func getEnvInt(key string, def, minVal, maxVal int) (int, error) {
 	val := os.Getenv(key)
 	if val == "" {
 		return def, nil
@@ -28,11 +37,21 @@ func getEnvInt(key string, def int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid %s value: %w", key, err)
 	}
+	if n < minVal || n > maxVal {
+		return 0, fmt.Errorf("invalid %s value: %d is outside the allowed range [%d, %d]", key, n, minVal, maxVal)
+	}
 	return n, nil
 }
 
-// getEnvDuration は環境変数 key を unit 単位の int として読み込み time.Duration に変換する。
-// 未設定なら def をそのまま返す(def は unit と異なる単位で組み立てられていてもよい)。
+// getEnvDuration reads env var key as an int count of unit and converts it
+// to a time.Duration, returning def unchanged when the var is unset (def may
+// be expressed in a different unit than unit).
+//
+// Zero and negative values are rejected, because every setting read through
+// here breaks something downstream at those values:
+// DAGSTER_SCRAPING_INTERVAL_SECONDS=0 panics time.NewTicker, and a negative
+// LOOKBACK_WINDOW_MINUTES puts updatedAfter in the future so the initial
+// backfill silently matches nothing.
 func getEnvDuration(key string, unit time.Duration, def time.Duration) (time.Duration, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -42,7 +61,11 @@ func getEnvDuration(key string, unit time.Duration, def time.Duration) (time.Dur
 	if err != nil {
 		return 0, fmt.Errorf("invalid %s value: %w", key, err)
 	}
-	return time.Duration(n) * unit, nil
+	d := time.Duration(n) * unit
+	if d <= 0 {
+		return 0, fmt.Errorf("invalid %s value: %d (must be positive)", key, n)
+	}
+	return d, nil
 }
 
 // processedRuns entries are touched (their TTL refreshed) on every scrape
@@ -54,9 +77,10 @@ func getEnvDuration(key string, unit time.Duration, def time.Duration) (time.Dur
 // failures before risking a double count.
 const cacheTTLScrapingIntervalMultiplier = 20
 
-// Load は環境変数などから設定を読み込んで返す
+// Load reads the exporter's configuration from environment variables,
+// applying defaults for anything unset and rejecting values that can't work.
 func Load() (*Config, error) {
-	port, err := getEnvInt("PORT", 9101)
+	port, err := getEnvInt("PORT", 9101, 1, 65535)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +114,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	runsPageSize, err := getEnvInt("RUNS_PAGE_SIZE", 500)
+	// The upper bound is MaxInt32 because GraphQL's Int is 32-bit: a larger
+	// value can't be represented as the query's limit variable anyway.
+	runsPageSize, err := getEnvInt("RUNS_PAGE_SIZE", 500, 1, math.MaxInt32)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +124,16 @@ func Load() (*Config, error) {
 	dagsterScrapingTimeout, err := getEnvDuration("DAGSTER_SCRAPING_TIMEOUT_SECONDS", time.Second, 10*time.Second)
 	if err != nil {
 		return nil, err
+	}
+
+	// Scrapes run serially inside startScrape's loop, so a timeout longer
+	// than the interval lets one slow scrape push the next tick back and
+	// stretch the effective interval. That isn't invalid — waiting longer on
+	// a temporarily slow Dagster is a reasonable thing to want — so this
+	// warns rather than errors, just so it doesn't happen unnoticed.
+	if dagsterScrapingTimeout > dagsterScrapingInterval {
+		log.Printf("warning: DAGSTER_SCRAPING_TIMEOUT_SECONDS (%v) is longer than DAGSTER_SCRAPING_INTERVAL_SECONDS (%v); a slow scrape will stretch the effective interval",
+			dagsterScrapingTimeout, dagsterScrapingInterval)
 	}
 
 	return &Config{

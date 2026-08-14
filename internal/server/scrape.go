@@ -50,7 +50,7 @@ func startScrape(ctx context.Context, c *collector.DagsterCollector, interval ti
 	for {
 		select {
 		case <-ctx.Done():
-			// アプリ終了シグナルを受け取ったらループを安全に抜ける
+			// Leave the loop cleanly once a shutdown signal arrives.
 			log.Println("Stopping background scraper...")
 			return
 

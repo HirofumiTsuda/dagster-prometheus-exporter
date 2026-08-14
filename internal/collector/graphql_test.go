@@ -203,3 +203,38 @@ func TestFetchRunPagesPaginatesUntilAShortPage(t *testing.T) {
 	assert.Equal(t, []string{"", "run_2", "run_5"}, seenCursors,
 		"each page's cursor should be the runId of the previous page's last result")
 }
+
+// A pageSize of zero or less makes "len(results) < pageSize" false for an
+// empty page, which used to fall through to results[len(results)-1] and
+// panic with index out of range [-1] — inside one of scrapeDagster's
+// goroutines, so it took the whole process down rather than failing a
+// scrape. config.Load rejects such a pageSize now, but fetchRunPages
+// shouldn't depend on its caller to stay memory-safe.
+func TestFetchRunPagesStopsOnAnEmptyPageWhateverThePageSize(t *testing.T) {
+	for _, pageSize := range []int{0, -1} {
+		t.Run(fmt.Sprintf("pageSize=%d", pageSize), func(t *testing.T) {
+			calls := 0
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				require.Less(t, calls, 5, "fetchRunPages should have stopped after the first empty page")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
+				assert.NoError(t, err)
+			}))
+			defer ts.Close()
+
+			pages := 0
+			require.NotPanics(t, func() {
+				err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, ts.URL, pageSize, func(page []Run) error {
+					pages++
+					return nil
+				})
+				assert.NoError(t, err)
+			})
+
+			assert.Equal(t, 1, calls, "an empty first page should end pagination immediately")
+			assert.Equal(t, 1, pages)
+		})
+	}
+}

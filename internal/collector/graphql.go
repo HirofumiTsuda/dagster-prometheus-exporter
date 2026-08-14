@@ -149,7 +149,13 @@ func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, 
 			return err
 		}
 
-		if len(results) < pageSize {
+		// An empty page always ends pagination, checked separately from the
+		// short-page test below rather than folded into it: with a pageSize
+		// of zero or less, "len(results) < pageSize" is false for an empty
+		// page, and the cursor line would then index results[-1] and panic.
+		// config.Load rejects such a pageSize, but this loop shouldn't
+		// depend on its caller to stay memory-safe.
+		if len(results) == 0 || len(results) < pageSize {
 			return nil
 		}
 		cursor = results[len(results)-1].RunId
