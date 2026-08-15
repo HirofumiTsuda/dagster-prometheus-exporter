@@ -94,8 +94,10 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_run_queue_concurrency_key_backlog` | Gauge | Runs queued behind a tag-based run-queue concurrency limit, per `dagster/concurrency_key` value. |
 | `dagster_schedule_status` | Gauge | Whether a schedule is currently on or off. |
 | `dagster_schedule_last_tick_status` | Gauge | Outcome of a schedule's most recent tick. |
+| `dagster_schedule_last_tick_timestamp_seconds` | Gauge | When a schedule last ticked, so a stalled schedule is detectable. |
 | `dagster_sensor_status` | Gauge | Whether a sensor is currently on or off. |
 | `dagster_sensor_last_tick_status` | Gauge | Outcome of a sensor's most recent tick. |
+| `dagster_sensor_last_tick_timestamp_seconds` | Gauge | When a sensor last ticked, so a stalled evaluation loop is detectable. |
 
 ### Exporter self-health
 

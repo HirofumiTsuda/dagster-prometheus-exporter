@@ -11,11 +11,13 @@ type ScheduleKey struct {
 	LocationName string
 }
 
-// scheduleTickEntry tracks the status of a schedule's most recently
-// observed tick, for dagster_schedule_last_tick_status. timestamp isn't
-// currently exposed as a metric itself, but is kept alongside status since
-// it's what "most recent" is determined by (ticks(limit: 1, afterTimestamp: 1) already returns
-// newest-first, so this is mostly for future use/debugging).
+// scheduleTickEntry tracks a schedule's most recently observed tick, for
+// dagster_schedule_last_tick_status and
+// dagster_schedule_last_tick_timestamp_seconds. ticks(limit: 1,
+// afterTimestamp: 1) already returns newest-first, so timestamp is not used
+// to pick the entry — it is reported as its own metric, because the status
+// alone can't distinguish a schedule that is still ticking from one that
+// stopped.
 type scheduleTickEntry struct {
 	status    string
 	timestamp float64
@@ -69,9 +71,15 @@ func reflectScheduleStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	}
 }
 
-// reflectScheduleTickStatus emits dagster_schedule_last_tick_status for
-// every schedule that has ticked at least once. Same "no seeded value
-// until the first observation" behavior as dagster_last_run_info.
+// reflectScheduleTickStatus emits dagster_schedule_last_tick_status and
+// dagster_schedule_last_tick_timestamp_seconds for every schedule that has
+// ticked at least once. Same "no seeded value until the first observation"
+// behavior as dagster_last_run_info, and the same single-pass reasoning as
+// reflectLastRun: both come from one entry.
+//
+// The timestamp is what makes "this schedule stopped ticking" detectable at
+// all. The status metric alone stays frozen at the last observed outcome, so
+// a schedule that quietly stops firing keeps reporting success forever.
 func reflectScheduleTickStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -83,6 +91,13 @@ func reflectScheduleTickStatus(c *DagsterCollector, ch chan<- prometheus.Metric)
 			key.ScheduleName,
 			key.LocationName,
 			strings.ToLower(entry.status),
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.scheduleTickTimestampDesc,
+			prometheus.GaugeValue,
+			entry.timestamp,
+			key.ScheduleName,
+			key.LocationName,
 		)
 	}
 }

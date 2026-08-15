@@ -66,9 +66,11 @@ func reflectSensorStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	}
 }
 
-// reflectSensorTickStatus emits dagster_sensor_last_tick_status for every
-// sensor that has ticked at least once. Same "no seeded value until the
-// first observation" behavior as dagster_last_run_info.
+// reflectSensorTickStatus emits dagster_sensor_last_tick_status and
+// dagster_sensor_last_tick_timestamp_seconds, mirroring
+// reflectScheduleTickStatus. Sensors tick on a fixed evaluation interval
+// rather than a cron boundary, so their timestamp is the cleaner liveness
+// signal of the two — see docs/metrics.md.
 func reflectSensorTickStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -80,6 +82,13 @@ func reflectSensorTickStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 			key.SensorName,
 			key.LocationName,
 			strings.ToLower(entry.status),
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.sensorTickTimestampDesc,
+			prometheus.GaugeValue,
+			entry.timestamp,
+			key.SensorName,
+			key.LocationName,
 		)
 	}
 }
