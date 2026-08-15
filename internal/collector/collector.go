@@ -9,15 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// unknownLocationName is the location label for runs whose repositoryOrigin
-// is absent (launched outside a code location, or old enough to predate the
-// field). The surrounding underscores keep it from colliding with a real
-// code location name: a collision would sum "we don't know where this ran"
-// and "it ran in the location called unknown" into one series, and would
-// also defeat the pruning in pruneLastRunStatus/pruneCompletedRunsCounter,
-// which relies on placeholder keys never matching a live location.
-const unknownLocationName = "__unknown__"
-
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 

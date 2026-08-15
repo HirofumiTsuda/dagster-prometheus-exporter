@@ -153,10 +153,17 @@ type RunTag struct {
 	Value string `json:"value"`
 }
 
+// unknownLocationName is the location label for runs whose repositoryOrigin
+// is absent (launched outside a code location, or old enough to predate the
+// field). The surrounding underscores keep it from colliding with a real
+// code location name: a collision would sum "we don't know where this ran"
+// and "it ran in the location called unknown" into one series, and would
+// also defeat the pruning in pruneLastRunStatus/pruneCompletedRunsCounter,
+// which relies on placeholder keys never matching a live location.
+const unknownLocationName = "__unknown__"
+
 // location returns the code location a run was launched from, falling back
-// to unknownLocationName when repositoryOrigin is absent. Runs old enough to
-// predate the field, or launched outside a code location, have no origin
-// recorded.
+// to unknownLocationName when repositoryOrigin is absent.
 func (r Run) location() string {
 	if r.RepositoryOrigin == nil {
 		return unknownLocationName

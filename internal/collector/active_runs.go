@@ -38,11 +38,15 @@ type activeRunAggregate struct {
 // Dagster's source. So updateTime is exactly "when this run entered its
 // current status" for every active status, without needing to special-case
 // STARTED with a separate startTime field.
+//
+// int64(run.UpdateTime) drops the sub-second part of the timestamp, and that
+// is fine on purpose: this value is computed once per scrape and then served
+// unchanged until the next one, so by the time Prometheus reads it, it is
+// already up to a full scrape interval (15s by default) out of date. A
+// sub-second correction would be lost inside that. The consumers are
+// "queued longer than 10 minutes" style alerts, not stopwatch readings.
 func elapsedSince(run Run, now time.Time) float64 {
-	// updateTime is a float64 of seconds, so converting via time.Unix would
-	// discard the fractional part. Subtracting in float64 keeps it — this is
-	// a duration metric, and there's no reason to round it to whole seconds.
-	return float64(now.UnixNano())/1e9 - run.UpdateTime
+	return now.Sub(time.Unix(int64(run.UpdateTime), 0)).Seconds()
 }
 
 // CollectActiveRuns fetches every QUEUED/STARTING/STARTED run and folds

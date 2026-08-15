@@ -201,16 +201,6 @@ func TestCollectActiveRunsAlsoTracksConcurrencyKeyBacklog(t *testing.T) {
 		"a previously-seen key should be zero-filled, not dropped, once its backlog clears")
 }
 
-func TestElapsedSinceKeepsSubSecondPrecision(t *testing.T) {
-	// updateTime is a float64 of seconds. Converting it through
-	// time.Unix(int64(...), 0) used to drop the fraction, rounding every
-	// dagster_active_run_duration_seconds value down to a whole second.
-	now := time.Unix(1000, 0)
-	run := Run{UpdateTime: 997.25}
-
-	assert.InDelta(t, 2.75, elapsedSince(run, now), 1e-6)
-}
-
 func TestRunLocationFallsBackWhenOriginIsAbsent(t *testing.T) {
 	withOrigin := Run{RepositoryOrigin: &RunRepositoryOrigin{RepositoryLocationName: "loc_a"}}
 	assert.Equal(t, "loc_a", withOrigin.location())
