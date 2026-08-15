@@ -275,7 +275,17 @@ dagster_code_location_load_error{location="dev-dagster-location"} 0
 
 ### Testing schedule/sensor tick status
 
-Unlike the broken-code-location fixture above, these aren't opt-in: `dev/dagster_workspace/job.py` defines `quick_job_schedule` (cron `* * * * *`, `default_status=DefaultScheduleStatus.RUNNING`) and `quick_job_sensor` (`minimum_interval_seconds=30`, `default_status=DefaultSensorStatus.RUNNING`, always returns a `SkipReason`) against a near-instant job, so the standard dev stack (`docker compose up`) starts ticking both automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status`/`dagster_sensor_status`/`dagster_sensor_last_tick_status` report real data within about a minute of startup.
+Unlike the broken-code-location fixture above, these aren't opt-in. `dev/dagster_workspace/job.py` defines three instigators against a near-instant job, all with `default_status=RUNNING`, so the standard dev stack (`docker compose up`) starts ticking them automatically — no extra setup needed to see `dagster_schedule_status`/`dagster_schedule_last_tick_status`/`dagster_sensor_status`/`dagster_sensor_last_tick_status` report real data within a couple of minutes of startup.
+
+Each produces a different tick status, so all three show up at once and an alert written against the `status` label can be tried out locally:
+
+| Fixture | Tick status | Why |
+| --- | --- | --- |
+| `quick_job_schedule` | `success` | cron `* * * * *`, launches `quick_job` every minute |
+| `quick_job_sensor` | `skipped` | `minimum_interval_seconds=30`, always returns a `SkipReason` |
+| `failing_sensor` | `failure` | `minimum_interval_seconds=30`, always raises |
+
+`failing_sensor` logs an error on every evaluation by design — intentional, like `failing_job` and the broken code location, not a sign the dev stack is misconfigured.
 
 ### Testing the Helm chart against a real Dagster (kind)
 

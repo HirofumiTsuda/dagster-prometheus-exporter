@@ -70,4 +70,20 @@ def quick_job_sensor(context: SensorEvaluationContext):
     )
 
 
-sensors = [quick_job_sensor]
+# Also default_status=RUNNING. Raises instead of returning, so its ticks are
+# deterministically FAILURE — the third distinct tick status alongside the
+# schedule's SUCCESS and quick_job_sensor's SKIPPED. Without it, nothing in
+# the dev stack ever produces dagster_sensor_last_tick_status{status="failure"},
+# so an alert written against that label can't be tried out locally.
+#
+# It logs an error every evaluation interval by design, in the same spirit as
+# failing_job and the broken code location: intentional, named to say so.
+@sensor(job=quick_job, minimum_interval_seconds=30, default_status=DefaultSensorStatus.RUNNING)
+def failing_sensor(context: SensorEvaluationContext):
+    raise RuntimeError(
+        "dev fixture: intentionally always fails, for exercising "
+        "dagster_sensor_last_tick_status{status=\"failure\"}"
+    )
+
+
+sensors = [quick_job_sensor, failing_sensor]

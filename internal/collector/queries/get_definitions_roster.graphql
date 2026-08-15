@@ -15,7 +15,14 @@ query GetDefinitionsRoster {
           cronSchedule
           scheduleState {
             status
-            ticks(limit: 1) {
+            # afterTimestamp is required for limit to do anything: asking for
+            # ticks(limit: 1) alone returns an empty list, and afterTimestamp: 0
+            # reads as "not specified" rather than "since the epoch". 1 is one
+            # second after the epoch, so this is an unbounded lookback that
+            # returns only the newest tick — which is what the metric means.
+            # A bounded window (dayRange) would drop infrequent schedules out
+            # of the metric for most of their cycle. See issues #85 and #86.
+            ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
             }
@@ -25,7 +32,14 @@ query GetDefinitionsRoster {
           name
           sensorState {
             status
-            ticks(limit: 1) {
+            # afterTimestamp is required for limit to do anything: asking for
+            # ticks(limit: 1) alone returns an empty list, and afterTimestamp: 0
+            # reads as "not specified" rather than "since the epoch". 1 is one
+            # second after the epoch, so this is an unbounded lookback that
+            # returns only the newest tick — which is what the metric means.
+            # A bounded window (dayRange) would drop infrequent schedules out
+            # of the metric for most of their cycle. See issues #85 and #86.
+            ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
             }

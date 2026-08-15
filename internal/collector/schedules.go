@@ -14,7 +14,7 @@ type ScheduleKey struct {
 // scheduleTickEntry tracks the status of a schedule's most recently
 // observed tick, for dagster_schedule_last_tick_status. timestamp isn't
 // currently exposed as a metric itself, but is kept alongside status since
-// it's what "most recent" is determined by (ticks(limit: 1) already returns
+// it's what "most recent" is determined by (ticks(limit: 1, afterTimestamp: 1) already returns
 // newest-first, so this is mostly for future use/debugging).
 type scheduleTickEntry struct {
 	status    string
@@ -34,7 +34,7 @@ func buildScheduleState(resp *GraphQLDefinitionsRosterResponse) (map[ScheduleKey
 			key := ScheduleKey{ScheduleName: schedule.Name, LocationName: repo.Location.Name}
 			status[key] = schedule.ScheduleState.Status
 
-			// ticks(limit: 1) returns the single most recent tick, newest
+			// ticks(limit: 1, afterTimestamp: 1) returns the single most recent tick, newest
 			// first; a schedule that has never fired yet returns an empty
 			// list, and simply has no entry here (no seeded value — same
 			// rationale as dagster_last_run_info for a job that's never run).
