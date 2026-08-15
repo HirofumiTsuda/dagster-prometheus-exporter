@@ -21,6 +21,83 @@ func closeBody(body io.Closer) {
 	_ = body.Close()
 }
 
+// graphQLClient is shared by every query. A zero-value http.Client already
+// reuses http.DefaultTransport's connection pool, so this isn't about
+// pooling — it's about having one place to set client-level policy, and one
+// seam to swap in tests.
+//
+// Timeout is intentionally left unset: callers control how long a request
+// may run through the context they pass (see http.NewRequestWithContext in
+// doGraphQL). Setting it here would silently cap the per-scrape deadline
+// that DAGSTER_SCRAPING_TIMEOUT_SECONDS is supposed to own.
+var graphQLClient = &http.Client{}
+
+// graphQLErrors is embedded in every response type to carry GraphQL's
+// top-level "errors" array. Embedding keeps the field promoted to the top
+// level of the JSON document, so the wire format is unchanged.
+//
+// Note this is a different failure channel from the unions handled by
+// unexpectedUnionMember: Dagster reports most query-level problems through
+// the union, and only protocol-level problems (a malformed query, an
+// unknown field) show up here.
+type graphQLErrors struct {
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func (e *graphQLErrors) err() error {
+	if len(e.Errors) > 0 {
+		return fmt.Errorf("graphql error: %s", e.Errors[0].Message)
+	}
+	return nil
+}
+
+// graphQLResponse is implemented by every response type, via the
+// graphQLErrors it embeds. Callers pass a pointer to their own response
+// value, so the pointer-receiver err() is in the method set.
+type graphQLResponse interface {
+	err() error
+}
+
+// doGraphQL posts request to endpoint and decodes the reply into out, in the
+// same shape as json.Unmarshal: the caller owns the destination value and
+// passes a pointer to it.
+//
+// Every query goes through here so that transport-level policy — the
+// context-controlled timeout, the status-code check, the top-level "errors"
+// check — is defined once. It used to be copied into a separate 36-line
+// function per query, and that duplication is exactly how the union checks
+// in issue #69 came to exist in one copy but not the others.
+func doGraphQL(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string, out graphQLResponse) error {
+	jsonBytes, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal graphql request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create http request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := graphQLClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to execute http request: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return out.err()
+}
+
 // unexpectedUnionMember reports that a GraphQL union resolved to something
 // other than the success type the caller can actually read.
 //
@@ -96,9 +173,7 @@ type GraphQLRunsResponse struct {
 			Stack    []string `json:"stack"`
 		} `json:"runsOrError"`
 	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+	graphQLErrors
 }
 
 //go:embed queries/get_runs.graphql
@@ -163,44 +238,16 @@ func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, 
 }
 
 func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLRunsResponse, error) {
-	jsonBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	var resp GraphQLRunsResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Timeout is intentionally not set here: the caller controls how long a
-	// request may run via ctx (see http.NewRequestWithContext above).
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute http request: %w", err)
-	}
-	defer closeBody(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var graphQLResp GraphQLRunsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(graphQLResp.Errors) > 0 {
-		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
-	}
-
-	if runsOrError := graphQLResp.Data.RunsOrError; runsOrError.Typename != "Runs" {
+	if runsOrError := resp.Data.RunsOrError; runsOrError.Typename != "Runs" {
 		return nil, unexpectedUnionMember("runsOrError", "Runs", runsOrError.Typename, runsOrError.Message, runsOrError.Stack)
 	}
 
-	return &graphQLResp, nil
+	return &resp, nil
 }
 
 // GraphQLDefinitionsRosterResponse is the shape of repositoriesOrError used
@@ -250,9 +297,7 @@ type GraphQLDefinitionsRosterResponse struct {
 			Stack   []string `json:"stack"`
 		} `json:"repositoriesOrError"`
 	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+	graphQLErrors
 }
 
 //go:embed queries/get_definitions_roster.graphql
@@ -265,44 +310,16 @@ func getDefinitionsRosterRequest() *GraphQLRequest {
 }
 
 func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDefinitionsRosterResponse, error) {
-	jsonBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	var resp GraphQLDefinitionsRosterResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Timeout is intentionally not set here: the caller controls how long a
-	// request may run via ctx (see http.NewRequestWithContext above).
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute http request: %w", err)
-	}
-	defer closeBody(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var graphQLResp GraphQLDefinitionsRosterResponse
-	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(graphQLResp.Errors) > 0 {
-		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
-	}
-
-	if repositoriesOrError := graphQLResp.Data.RepositoriesOrError; repositoriesOrError.Typename != "RepositoryConnection" {
+	if repositoriesOrError := resp.Data.RepositoriesOrError; repositoriesOrError.Typename != "RepositoryConnection" {
 		return nil, unexpectedUnionMember("repositoriesOrError", "RepositoryConnection", repositoriesOrError.Typename, repositoriesOrError.Message, repositoriesOrError.Stack)
 	}
 
-	return &graphQLResp, nil
+	return &resp, nil
 }
 
 type GraphQLWorkspaceStatusResponse struct {
@@ -321,9 +338,7 @@ type GraphQLWorkspaceStatusResponse struct {
 			Stack   []string `json:"stack"`
 		} `json:"workspaceOrError"`
 	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+	graphQLErrors
 }
 
 //go:embed queries/get_workspace_status.graphql
@@ -336,44 +351,16 @@ func getWorkspaceStatusRequest() *GraphQLRequest {
 }
 
 func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLWorkspaceStatusResponse, error) {
-	jsonBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	var resp GraphQLWorkspaceStatusResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Timeout is intentionally not set here: the caller controls how long a
-	// request may run via ctx (see http.NewRequestWithContext above).
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute http request: %w", err)
-	}
-	defer closeBody(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var graphQLResp GraphQLWorkspaceStatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(graphQLResp.Errors) > 0 {
-		return nil, fmt.Errorf("graphql error: %s", graphQLResp.Errors[0].Message)
-	}
-
-	if workspaceOrError := graphQLResp.Data.WorkspaceOrError; workspaceOrError.Typename != "Workspace" {
+	if workspaceOrError := resp.Data.WorkspaceOrError; workspaceOrError.Typename != "Workspace" {
 		return nil, unexpectedUnionMember("workspaceOrError", "Workspace", workspaceOrError.Typename, workspaceOrError.Message, workspaceOrError.Stack)
 	}
 
-	return &graphQLResp, nil
+	return &resp, nil
 }
 
 //go:embed queries/get_version.graphql
@@ -383,6 +370,7 @@ type GraphQLVersionResponse struct {
 	Data struct {
 		Version string `json:"version"`
 	} `json:"data"`
+	graphQLErrors
 }
 
 func GetVersionRequest() *GraphQLRequest {
@@ -394,38 +382,17 @@ func GetVersionRequest() *GraphQLRequest {
 }
 
 func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLVersionResponse, error) {
-	jsonBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+	var resp GraphQLVersionResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Timeout is intentionally not set here: the caller controls how long a
-	// request may run via ctx (see http.NewRequestWithContext above).
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute http request: %w", err)
-	}
-	defer closeBody(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var graphQLResp GraphQLVersionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(graphQLResp.Data.Version) == 0 {
+	// version isn't a union, so there's no __typename to check. An empty
+	// value is the only signal that the reply didn't carry what /readyz
+	// needs.
+	if len(resp.Data.Version) == 0 {
 		return nil, fmt.Errorf("graphql version response missing version")
 	}
 
-	return &graphQLResp, nil
+	return &resp, nil
 }
