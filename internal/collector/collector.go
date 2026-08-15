@@ -24,8 +24,10 @@ type DagsterCollector struct {
 	concurrencyKeyBacklogDesc *prometheus.Desc
 	scheduleStatusDesc        *prometheus.Desc
 	scheduleTickStatusDesc    *prometheus.Desc
+	scheduleTickTimestampDesc *prometheus.Desc
 	sensorStatusDesc          *prometheus.Desc
 	sensorTickStatusDesc      *prometheus.Desc
+	sensorTickTimestampDesc   *prometheus.Desc
 	daemonHealthyDesc         *prometheus.Desc
 	daemonLastHeartbeatDesc   *prometheus.Desc
 
@@ -151,6 +153,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"schedule_name", "location", "status"},
 			nil,
 		),
+		scheduleTickTimestampDesc: prometheus.NewDesc(
+			"dagster_schedule_last_tick_timestamp_seconds",
+			"Unix timestamp of a schedule's most recent tick. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"schedule_name", "location"},
+			nil,
+		),
 		sensorStatusDesc: prometheus.NewDesc(
 			"dagster_sensor_status",
 			"Whether a sensor is currently turned on (value is always 1; status is carried in the status label, one of running/stopped)",
@@ -161,6 +169,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			"dagster_sensor_last_tick_status",
 			"Status of a sensor's most recent tick (value is always 1; status is carried in the status label, one of started/skipped/success/failure)",
 			[]string{"sensor_name", "location", "status"},
+			nil,
+		),
+		sensorTickTimestampDesc: prometheus.NewDesc(
+			"dagster_sensor_last_tick_timestamp_seconds",
+			"Unix timestamp of a sensor's most recent tick. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"sensor_name", "location"},
 			nil,
 		),
 		daemonHealthyDesc: prometheus.NewDesc(
@@ -196,8 +210,10 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.concurrencyKeyBacklogDesc
 	ch <- c.scheduleStatusDesc
 	ch <- c.scheduleTickStatusDesc
+	ch <- c.scheduleTickTimestampDesc
 	ch <- c.sensorStatusDesc
 	ch <- c.sensorTickStatusDesc
+	ch <- c.sensorTickTimestampDesc
 	ch <- c.daemonHealthyDesc
 	ch <- c.daemonLastHeartbeatDesc
 	c.completedRunsCounter.Describe(ch)

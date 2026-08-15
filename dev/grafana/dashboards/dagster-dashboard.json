@@ -732,6 +732,52 @@
         "x": 12,
         "y": 53
       }
+    },
+    {
+      "title": "Schedule Tick Age",
+      "description": "Seconds since each schedule last ticked. A schedule that stopped firing climbs without limit; note the normal range depends on the schedule's cron cadence, so there is no single alert threshold.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_schedule_last_tick_timestamp_seconds",
+          "legendFormat": "{{schedule_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 61
+      }
+    },
+    {
+      "title": "Sensor Tick Age",
+      "description": "Seconds since each sensor last ticked. Sensors tick on a fixed evaluation interval regardless of whether they launch anything, so unlike schedules this has a single meaningful threshold.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_sensor_last_tick_timestamp_seconds",
+          "legendFormat": "{{sensor_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 61
+      }
     }
   ],
   "templating": {

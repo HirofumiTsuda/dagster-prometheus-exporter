@@ -194,18 +194,42 @@ func TestCollectDefinitionsRosterTracksScheduleStatusAndLastTick(t *testing.T) {
 	for m := range tickCh {
 		tickMetrics = append(tickMetrics, m)
 	}
-	require.Len(t, tickMetrics, 1, "only the schedule that has ticked should produce a series")
+	// Two series per ticked schedule: the status, and the timestamp that makes
+	// "this schedule stopped ticking" detectable.
+	require.Len(t, tickMetrics, 2, "the schedule that has ticked should produce a status and a timestamp series")
 
-	var dm dto.Metric
-	require.NoError(t, tickMetrics[0].Write(&dm))
-	assert.Equal(t, float64(1), dm.GetGauge().GetValue())
+	var status, timestamp *dto.Metric
+	for _, m := range tickMetrics {
+		var dm dto.Metric
+		require.NoError(t, m.Write(&dm))
+		if strings.Contains(m.Desc().String(), "dagster_schedule_last_tick_timestamp_seconds") {
+			timestamp = &dm
+		} else {
+			status = &dm
+		}
+	}
+	require.NotNil(t, status)
+	require.NotNil(t, timestamp)
+
+	assert.Equal(t, float64(1), status.GetGauge().GetValue())
 	labels := make(map[string]string)
-	for _, l := range dm.GetLabel() {
+	for _, l := range status.GetLabel() {
 		labels[l.GetName()] = l.GetValue()
 	}
 	assert.Equal(t, "my_schedule", labels["schedule_name"])
 	assert.Equal(t, "loc_a", labels["location"])
 	assert.Equal(t, "success", labels["status"])
+
+	// The newest tick is SUCCESS@200; the older FAILURE@100 must not win.
+	assert.Equal(t, float64(200), timestamp.GetGauge().GetValue())
+	tsLabels := make(map[string]string)
+	for _, l := range timestamp.GetLabel() {
+		tsLabels[l.GetName()] = l.GetValue()
+	}
+	assert.Equal(t, "my_schedule", tsLabels["schedule_name"])
+	assert.Equal(t, "loc_a", tsLabels["location"])
+	assert.NotContains(t, tsLabels, "status",
+		"the timestamp carries the information in its value; a status label would churn the series")
 }
 
 // Dagster's InstigationState.ticks returns an empty list when asked with a

@@ -111,6 +111,18 @@ Labels: `schedule_name`, `location`, `status`
 
 Always `1`; status of a schedule's most recently observed tick (`started`, `skipped`, `success`, or `failure`). A schedule that has never ticked yet has no series — no seeded value, same rationale as `dagster_last_run_info` for a job that's never run.
 
+Note this reports *what* the last tick was, not *when*. On its own it can't tell a schedule that is still ticking from one that stopped: the series simply freezes at the last outcome observed. Use `dagster_schedule_last_tick_timestamp_seconds` below for that.
+
+## `dagster_schedule_last_tick_timestamp_seconds` (Gauge)
+
+Labels: `schedule_name`, `location`
+
+Unix timestamp of the schedule's most recent tick. Exported as a timestamp rather than an age so staleness is computed at query time — `time() - dagster_schedule_last_tick_timestamp_seconds` — instead of being frozen at scrape time. Same "no series until the first tick" behavior as the status metric above, and no `status` label, since here the value carries the information and a status label would churn the series on every outcome change.
+
+There is deliberately no single recommended alert threshold. A tick is one evaluation by the daemon, and schedules tick on their cron boundary, so "no tick for an hour" is routine for a daily schedule and alarming for an every-minute one. The threshold has to come from the schedule's own cadence.
+
+This is also not the metric for "is the scheduler daemon alive" — see `dagster_daemon_healthy`, which answers that even in a deployment with no schedules or sensors defined at all. What this one adds is the per-schedule view: a single schedule that stopped firing while the daemon is perfectly healthy (silently turned off, erroring on evaluation, or a cron that never matches).
+
 ## `dagster_sensor_status` (Gauge)
 
 Labels: `sensor_name`, `location`, `status`
@@ -122,6 +134,16 @@ Same as `dagster_schedule_status`, for sensors: `running`/`stopped`.
 Labels: `sensor_name`, `location`, `status`
 
 Same as `dagster_schedule_last_tick_status`, for sensors. Note a sensor tick that decides not to launch anything is `skipped`, not a lack of data — Dagster's sensor daemon evaluates on a fixed interval regardless of whether there's anything to do, so `skipped` is a normal, common outcome, not necessarily a problem.
+
+## `dagster_sensor_last_tick_timestamp_seconds` (Gauge)
+
+Labels: `sensor_name`, `location`
+
+Same as `dagster_schedule_last_tick_timestamp_seconds`, for sensors — and the more useful of the two for spotting a stalled evaluation loop. Because sensors tick on a fixed interval (`minimum_interval_seconds`) whether or not they launch anything, staleness here has a single meaningful threshold, unlike the cron-driven schedule case:
+
+```promql
+time() - dagster_sensor_last_tick_timestamp_seconds > 300
+```
 
 ## Exporter self-health
 
