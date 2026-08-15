@@ -24,9 +24,10 @@ jobs:
               - "**.go"
               - go.mod
               - go.sum
-              # golangci-lint's version lives here now, so a bump has to
-              # re-run the lint job.
+              # golangci-lint's version and its enabled linters live in
+              # these two, so a change to either has to re-run the lint job.
               - .tool-versions
+              - .golangci.yml
               - .github/workflows/ci.yml
             python:
               - "**.py"
