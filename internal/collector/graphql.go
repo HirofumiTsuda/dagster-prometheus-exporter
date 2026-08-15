@@ -381,6 +381,50 @@ func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGra
 	return &resp, nil
 }
 
+// GraphQLDaemonHealthResponse is the shape of instance.daemonHealth. Unlike
+// the roster/runs/workspace queries there is no union here — instance and
+// daemonHealth are both non-null object types — so there is no __typename to
+// check and no unexpectedUnionMember call in getDaemonHealth.
+//
+// lastHeartbeatTime is nullable: a daemon that has never reported one has no
+// timestamp rather than a zero, hence the pointer.
+type GraphQLDaemonHealthResponse struct {
+	Data struct {
+		Instance struct {
+			DaemonHealth struct {
+				AllDaemonStatuses []struct {
+					DaemonType          string   `json:"daemonType"`
+					Required            bool     `json:"required"`
+					Healthy             *bool    `json:"healthy"`
+					LastHeartbeatTime   *float64 `json:"lastHeartbeatTime"`
+					LastHeartbeatErrors []struct {
+						Message string `json:"message"`
+					} `json:"lastHeartbeatErrors"`
+				} `json:"allDaemonStatuses"`
+			} `json:"daemonHealth"`
+		} `json:"instance"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_daemon_health.graphql
+var daemonHealthQuery string
+
+func getDaemonHealthRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: daemonHealthQuery,
+	}
+}
+
+func getDaemonHealth(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDaemonHealthResponse, error) {
+	var resp GraphQLDaemonHealthResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 //go:embed queries/get_version.graphql
 var versionQuery string
 

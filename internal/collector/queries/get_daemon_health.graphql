@@ -1,0 +1,15 @@
+query GetDaemonHealth {
+  instance {
+    daemonHealth {
+      allDaemonStatuses {
+        daemonType
+        required
+        healthy
+        lastHeartbeatTime
+        lastHeartbeatErrors {
+          message
+        }
+      }
+    }
+  }
+}
