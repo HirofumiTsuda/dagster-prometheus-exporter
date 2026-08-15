@@ -33,7 +33,7 @@ func buildSensorState(resp *GraphQLDefinitionsRosterResponse) (map[SensorKey]str
 			key := SensorKey{SensorName: sensor.Name, LocationName: repo.Location.Name}
 			status[key] = sensor.SensorState.Status
 
-			// ticks(limit: 1) returns the single most recent tick, newest
+			// ticks(limit: 1, afterTimestamp: 1) returns the single most recent tick, newest
 			// first; a sensor that has never fired yet returns an empty
 			// list, and simply has no entry here (no seeded value — same
 			// rationale as dagster_last_run_info for a job that's never run).

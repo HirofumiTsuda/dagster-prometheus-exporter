@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,4 +206,59 @@ func TestCollectDefinitionsRosterTracksScheduleStatusAndLastTick(t *testing.T) {
 	assert.Equal(t, "my_schedule", labels["schedule_name"])
 	assert.Equal(t, "loc_a", labels["location"])
 	assert.Equal(t, "success", labels["status"])
+}
+
+// Dagster's InstigationState.ticks returns an empty list when asked with a
+// limit but no time bound, which is how the tick metrics came to be silently
+// absent on every real instance (issue #85). The other tests here can't catch
+// that, because their mocks hand back ticks regardless of what was asked.
+//
+// This server mimics the real resolver: ticks come back only if the query
+// carried a time bound.
+func TestCollectDefinitionsRosterAsksForTicksInAWayDagsterAnswers(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+		// Comments in the query mention afterTimestamp by name, so match on
+		// the argument itself rather than the word appearing anywhere.
+		var args strings.Builder
+		for line := range strings.SplitSeq(req.Query, "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				args.WriteString(line)
+			}
+		}
+		bounded := strings.Contains(args.String(), "afterTimestamp:") || strings.Contains(args.String(), "dayRange:")
+
+		ticks := "[]"
+		if bounded {
+			ticks = `[{"status": "SUCCESS", "timestamp": 200}]`
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(`{
+			"data": {
+				"repositoriesOrError": {
+					"__typename": "RepositoryConnection",
+					"nodes": [
+						{
+							"name": "repo", "location": {"name": "loc_a"}, "jobs": [],
+							"schedules": [{"name": "sched_a", "cronSchedule": "* * * * *", "scheduleState": {"status": "RUNNING", "ticks": ` + ticks + `}}],
+							"sensors": [{"name": "sensor_a", "sensorState": {"status": "RUNNING", "ticks": ` + ticks + `}}]
+						}
+					]
+				}
+			}
+		}`))
+		assert.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+
+	assert.Contains(t, c.scheduleTickStatus, ScheduleKey{ScheduleName: "sched_a", LocationName: "loc_a"},
+		"the roster query must ask for ticks in a way Dagster actually answers; a bare limit returns nothing")
+	assert.Contains(t, c.sensorTickStatus, SensorKey{SensorName: "sensor_a", LocationName: "loc_a"})
 }
