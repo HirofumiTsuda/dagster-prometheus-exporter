@@ -1,0 +1,24 @@
+# Without this file, golangci-lint runs whichever linters its own version
+# happens to enable by default — which is how a local v1 install and a CI v2
+# install ended up checking different things (see .tool-versions). Stating the
+# set explicitly makes it a property of the repository rather than of whoever
+# ran the tool.
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) is
+  # what CI has effectively been running all along; it stays the baseline.
+  default: standard
+
+  enable:
+    - gocritic
+
+  settings:
+    gocritic:
+      enabled-checks:
+        # Not on by default, because naming a variable after a package it
+        # shadows is a matter of taste. This repository's taste is that it
+        # isn't worth it: the resulting compile error when someone later
+        # needs the package again reads "config.Config is not a type", which
+        # says nothing about the shadowing that caused it.
+        - importShadow
