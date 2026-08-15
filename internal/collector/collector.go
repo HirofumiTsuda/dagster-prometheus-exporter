@@ -26,6 +26,8 @@ type DagsterCollector struct {
 	scheduleTickStatusDesc    *prometheus.Desc
 	sensorStatusDesc          *prometheus.Desc
 	sensorTickStatusDesc      *prometheus.Desc
+	daemonHealthyDesc         *prometheus.Desc
+	daemonLastHeartbeatDesc   *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
@@ -43,6 +45,7 @@ type DagsterCollector struct {
 	runsPageSize            int
 	scrapeResults           map[string]scrapeResult
 	codeLocationLoadError   map[string]bool
+	daemonHealth            map[string]daemonHealthEntry
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -160,6 +163,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"sensor_name", "location", "status"},
 			nil,
 		),
+		daemonHealthyDesc: prometheus.NewDesc(
+			"dagster_daemon_healthy",
+			"Whether a Dagster daemon is currently healthy (1) or not (0). required=false means the instance isn't configured to run it, so it being unhealthy is expected rather than an incident",
+			[]string{"daemon_type", "required"},
+			nil,
+		),
+		daemonLastHeartbeatDesc: prometheus.NewDesc(
+			"dagster_daemon_last_heartbeat_timestamp_seconds",
+			"Unix timestamp of a daemon's most recent heartbeat. Absent for a daemon that has never reported one. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"daemon_type"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -183,6 +198,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.scheduleTickStatusDesc
 	ch <- c.sensorStatusDesc
 	ch <- c.sensorTickStatusDesc
+	ch <- c.daemonHealthyDesc
+	ch <- c.daemonLastHeartbeatDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -197,6 +214,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectScheduleTickStatus(c, ch)
 	reflectSensorStatus(c, ch)
 	reflectSensorTickStatus(c, ch)
+	reflectDaemonHealth(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

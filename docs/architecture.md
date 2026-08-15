@@ -13,11 +13,13 @@ The exporter is a single Go binary with no external state store — everything i
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.
 
-## Why four collectors, and why they're split the way they are
+## Why five collectors, and why they're split the way they are
 
-The four collectors (definitions roster, active runs, completed runs, code-location load status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
+The five collectors (definitions roster, active runs, completed runs, code-location load status, daemon health) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
 
 The code-location load status collector is intentionally independent of the definitions-roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` in the [metrics reference](metrics.md).
+
+The daemon-health collector is likewise independent: `instance.daemonHealth` is a top-level field, not something reachable from `repositoriesOrError`, so it needs its own query. It is also the only collector that reports on Dagster's *machinery* rather than its work — everything else here describes runs, schedules, sensors and code locations, all of which the webserver keeps answering perfectly while the daemon is down.
 
 `dagster_run_queue_concurrency_key_backlog` is folded into the active-runs collector instead of getting its own: it only needs `QUEUED` runs' tags, which that collector already fetches on every page, so a separate query would just re-fetch the same runs a second time for no reason.
 

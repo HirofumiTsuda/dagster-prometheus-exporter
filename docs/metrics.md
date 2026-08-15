@@ -50,6 +50,45 @@ Labels: `location`
 
 A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality.
 
+## `dagster_daemon_healthy` (Gauge)
+
+Labels: `daemon_type`, `required`
+
+`1` if the daemon is currently healthy, `0` otherwise. `daemon_type` is one of Dagster's daemons — on 1.13.15: `SCHEDULER`, `SENSOR`, `BACKFILL`, `QUEUED_RUN_COORDINATOR`, `ASSET`, `FRESHNESS_DAEMON`.
+
+This is the only metric here that reports on Dagster's machinery rather than its work, and it answers a question none of the others can: **is the scheduler actually running?** When the daemon dies, everything else keeps looking healthy — `dagster_schedule_status` still reports `running` (the schedule *is* enabled; that metric is about the on/off state, not the daemon), the last tick status stays frozen at whatever it was, active runs simply go quiet, and `dagster_exporter_last_scrape_success` stays `1` because the GraphQL endpoint is served by the webserver, which is fine. Nothing changes. Without this metric, "the scheduler is dead" and "nothing was scheduled" are indistinguishable.
+
+`required=false` means the instance isn't configured to run that daemon, so it reporting unhealthy is expected rather than an incident — scope any alert to `{required="true"}`.
+
+A null `healthy` from Dagster is reported as `0`, not `1`: this metric exists to catch a daemon that isn't answering, and no answer is not an answer.
+
+`lastHeartbeatErrors` is logged rather than attached as a label, the same treatment `dagster_code_location_load_error` gives its error message, to avoid unbounded label cardinality.
+
+**Don't alert on this metric alone.** `healthy` is not a live check — it is Dagster comparing the last heartbeat against a fixed 30-minute tolerance (`DEFAULT_DAEMON_HEARTBEAT_TOLERANCE_SECONDS = 1800`, against a `DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30` write interval). A daemon that stopped 14 minutes ago still reports `1`. Verified by freezing the daemon process with `SIGSTOP` while leaving the webserver up:
+
+```
+dagster_daemon_healthy{daemon_type="SCHEDULER",required="true"} 1     # after 14 minutes down
+time() - dagster_daemon_last_heartbeat_timestamp_seconds  ->  825     # and climbing
+```
+
+For an every-minute schedule that tolerance means roughly thirty missed runs before anything fires. Use the heartbeat timestamp below and pick your own threshold.
+
+## `dagster_daemon_last_heartbeat_timestamp_seconds` (Gauge)
+
+Labels: `daemon_type`
+
+Unix timestamp of the daemon's most recent heartbeat, exported as a timestamp rather than an age so staleness is computed at query time (`time() - dagster_daemon_last_heartbeat_timestamp_seconds`) instead of being frozen at scrape time.
+
+A daemon that has never reported a heartbeat produces no series at all, rather than one claiming a heartbeat at the Unix epoch — which would make every staleness alert fire on a freshly started instance.
+
+This, rather than `dagster_daemon_healthy`, is the metric to alert on. Heartbeats are written every 30s, so a threshold of a couple of minutes catches a stopped daemon roughly fifteen times sooner than Dagster's own 30-minute tolerance:
+
+```promql
+time() - dagster_daemon_last_heartbeat_timestamp_seconds{daemon_type="SCHEDULER"} > 120
+```
+
+Exporting the raw timestamp is what makes that choice yours: an exported age would be computed once per scrape and then served unchanged, so it would understate the outage by up to a full scrape interval.
+
 ## `dagster_run_queue_concurrency_key_backlog` (Gauge)
 
 Labels: `concurrency_key`
@@ -86,7 +125,7 @@ Same as `dagster_schedule_last_tick_status`, for sensors. Note a sensor tick tha
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, or `code_location_status` (the four concurrent collectors described in [docs/architecture.md](architecture.md)).
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, or `daemon_health` (the five concurrent collectors described in [docs/architecture.md](architecture.md)).
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

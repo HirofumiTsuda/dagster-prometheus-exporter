@@ -71,7 +71,7 @@ flowchart LR
     Grafana -- query --> Prometheus
 ```
 
-A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Four collectors (definitions roster, active runs, completed runs, code-location load status) run concurrently on every scrape.
+A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Five collectors (definitions roster, active runs, completed runs, code-location load status, daemon health) run concurrently on every scrape.
 
 For the package layout, why there are four separate collectors, and how completed-run fetching stays incremental instead of re-scanning everything every cycle, see [docs/architecture.md](docs/architecture.md).
 
@@ -88,6 +88,8 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`) per job, since the exporter started. |
 | `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). |
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
+| `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |
+| `dagster_daemon_last_heartbeat_timestamp_seconds` | Gauge | When each daemon last reported a heartbeat. |
 | `dagster_code_location_load_error` | Gauge | Whether a code location most recently failed to load. |
 | `dagster_run_queue_concurrency_key_backlog` | Gauge | Runs queued behind a tag-based run-queue concurrency limit, per `dagster/concurrency_key` value. |
 | `dagster_schedule_status` | Gauge | Whether a schedule is currently on or off. |

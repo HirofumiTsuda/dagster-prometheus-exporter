@@ -641,6 +641,97 @@
         "x": 18,
         "y": 21
       }
+    },
+    {
+      "title": "Daemon Health",
+      "description": "The only panel that shows a dead scheduler. Every other panel keeps looking healthy when the daemon dies, because they are all served by the webserver.",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "dagster_daemon_healthy",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Down",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Healthy",
+                        "color": "green"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 53
+      }
+    },
+    {
+      "title": "Daemon Heartbeat Age",
+      "description": "Seconds since each daemon last reported a heartbeat. Computed at query time from the exported timestamp, so it keeps climbing while a daemon is down instead of freezing at the last scrape.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_daemon_last_heartbeat_timestamp_seconds",
+          "legendFormat": "{{daemon_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 53
+      }
     }
   ],
   "templating": {
