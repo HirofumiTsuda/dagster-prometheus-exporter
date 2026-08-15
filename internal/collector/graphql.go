@@ -53,55 +53,49 @@ func (e *graphQLErrors) err() error {
 	return nil
 }
 
-// graphQLResponse constrains doGraphQL's type parameter to response types
-// that embed graphQLErrors. The two-parameter form (T for the value, PT for
-// its pointer) is what lets doGraphQL both allocate a T and call the
-// pointer-receiver err() on it.
-type graphQLResponse[T any] interface {
-	*T
+// graphQLResponse is implemented by every response type, via the
+// graphQLErrors it embeds. Callers pass a pointer to their own response
+// value, so the pointer-receiver err() is in the method set.
+type graphQLResponse interface {
 	err() error
 }
 
-// doGraphQL posts request to endpoint and decodes the reply into T.
+// doGraphQL posts request to endpoint and decodes the reply into out, in the
+// same shape as json.Unmarshal: the caller owns the destination value and
+// passes a pointer to it.
 //
 // Every query goes through here so that transport-level policy — the
 // context-controlled timeout, the status-code check, the top-level "errors"
 // check — is defined once. It used to be copied into a separate 36-line
 // function per query, and that duplication is exactly how the union checks
 // in issue #69 came to exist in one copy but not the others.
-func doGraphQL[T any, PT graphQLResponse[T]](ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (PT, error) {
+func doGraphQL(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string, out graphQLResponse) error {
 	jsonBytes, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal graphql request: %w", err)
+		return fmt.Errorf("failed to marshal graphql request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
+		return fmt.Errorf("failed to create http request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := graphQLClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute http request: %w", err)
+		return fmt.Errorf("failed to execute http request: %w", err)
 	}
 	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var decoded T
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	out := PT(&decoded)
-	if err := out.err(); err != nil {
-		return nil, err
-	}
-
-	return out, nil
+	return out.err()
 }
 
 // unexpectedUnionMember reports that a GraphQL union resolved to something
@@ -244,8 +238,8 @@ func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, 
 }
 
 func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLRunsResponse, error) {
-	resp, err := doGraphQL[GraphQLRunsResponse](ctx, request, dagsterGraphQLEndpoint)
-	if err != nil {
+	var resp GraphQLRunsResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
 		return nil, err
 	}
 
@@ -253,7 +247,7 @@ func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoin
 		return nil, unexpectedUnionMember("runsOrError", "Runs", runsOrError.Typename, runsOrError.Message, runsOrError.Stack)
 	}
 
-	return resp, nil
+	return &resp, nil
 }
 
 // GraphQLDefinitionsRosterResponse is the shape of repositoriesOrError used
@@ -316,8 +310,8 @@ func getDefinitionsRosterRequest() *GraphQLRequest {
 }
 
 func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDefinitionsRosterResponse, error) {
-	resp, err := doGraphQL[GraphQLDefinitionsRosterResponse](ctx, request, dagsterGraphQLEndpoint)
-	if err != nil {
+	var resp GraphQLDefinitionsRosterResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
 		return nil, err
 	}
 
@@ -325,7 +319,7 @@ func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterG
 		return nil, unexpectedUnionMember("repositoriesOrError", "RepositoryConnection", repositoriesOrError.Typename, repositoriesOrError.Message, repositoriesOrError.Stack)
 	}
 
-	return resp, nil
+	return &resp, nil
 }
 
 type GraphQLWorkspaceStatusResponse struct {
@@ -357,8 +351,8 @@ func getWorkspaceStatusRequest() *GraphQLRequest {
 }
 
 func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLWorkspaceStatusResponse, error) {
-	resp, err := doGraphQL[GraphQLWorkspaceStatusResponse](ctx, request, dagsterGraphQLEndpoint)
-	if err != nil {
+	var resp GraphQLWorkspaceStatusResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
 		return nil, err
 	}
 
@@ -366,7 +360,7 @@ func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGra
 		return nil, unexpectedUnionMember("workspaceOrError", "Workspace", workspaceOrError.Typename, workspaceOrError.Message, workspaceOrError.Stack)
 	}
 
-	return resp, nil
+	return &resp, nil
 }
 
 //go:embed queries/get_version.graphql
@@ -388,8 +382,8 @@ func GetVersionRequest() *GraphQLRequest {
 }
 
 func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLVersionResponse, error) {
-	resp, err := doGraphQL[GraphQLVersionResponse](ctx, request, dagsterGraphQLEndpoint)
-	if err != nil {
+	var resp GraphQLVersionResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
 		return nil, err
 	}
 
@@ -400,5 +394,5 @@ func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndp
 		return nil, fmt.Errorf("graphql version response missing version")
 	}
 
-	return resp, nil
+	return &resp, nil
 }
