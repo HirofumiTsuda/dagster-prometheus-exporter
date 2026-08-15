@@ -11,7 +11,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/HirofumiTsuda/dagster-prometheus-exporter.svg)](https://pkg.go.dev/github.com/HirofumiTsuda/dagster-prometheus-exporter)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
 
-A Prometheus exporter for [Dagster](https://dagster.io/) run metrics. It polls Dagster's GraphQL API on an interval and exposes run counts, statuses, and code-location information as Prometheus metrics.
+A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, run-queue backlog, and code-location load errors as Prometheus metrics.
 
 ![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
 

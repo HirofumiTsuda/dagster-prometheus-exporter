@@ -153,6 +153,17 @@ type RunTag struct {
 	Value string `json:"value"`
 }
 
+// location returns the code location a run was launched from, falling back
+// to unknownLocationName when repositoryOrigin is absent. Runs old enough to
+// predate the field, or launched outside a code location, have no origin
+// recorded.
+func (r Run) location() string {
+	if r.RepositoryOrigin == nil {
+		return unknownLocationName
+	}
+	return r.RepositoryOrigin.RepositoryLocationName
+}
+
 type Run struct {
 	RunId            string               `json:"runId"`
 	JobName          string               `json:"jobName"`

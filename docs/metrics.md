@@ -4,6 +4,8 @@ Design rationale, edge cases, and blind spots for each metric. For the short ver
 
 The per-job metrics are labeled with `job_name` and `location` (the Dagster code location the job belongs to), so that jobs with the same name in different code locations don't collide. `dagster_code_location_load_error` is location-scoped rather than job-scoped, since it reports on a code location as a whole.
 
+A run records its code location as a launch-time snapshot (`repositoryOrigin`), and that field can be absent — for runs launched outside a code location, or old enough to predate it. Those runs are reported as `location="__unknown__"`. The name is deliberately not something a real code location would be called: the placeholder has to stay distinguishable from a location that genuinely exists, both so the two aren't summed into one series and because the exporter prunes series for locations Dagster no longer reports, which a collision would defeat. (Before v0.3.0 this placeholder was `unknown`, which a real code location could have been named.)
+
 ## `dagster_active_runs` (Gauge)
 
 Labels: `job_name`, `location`, `status`

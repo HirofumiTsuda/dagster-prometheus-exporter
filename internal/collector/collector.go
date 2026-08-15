@@ -9,7 +9,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const unknownLocationName = "unknown"
+// unknownLocationName is the location label for runs whose repositoryOrigin
+// is absent (launched outside a code location, or old enough to predate the
+// field). The surrounding underscores keep it from colliding with a real
+// code location name: a collision would sum "we don't know where this ran"
+// and "it ran in the location called unknown" into one series, and would
+// also defeat the pruning in pruneLastRunStatus/pruneCompletedRunsCounter,
+// which relies on placeholder keys never matching a live location.
+const unknownLocationName = "__unknown__"
 
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
@@ -43,8 +50,7 @@ type DagsterCollector struct {
 	trackedCompletedRunKeys map[JobKey]struct{}
 	lastSeenUpdateTime      float64
 	runsPageSize            int
-	scrapeDuration          map[string]float64
-	lastScrapeSuccess       map[string]bool
+	scrapeResults           map[string]scrapeResult
 	codeLocationLoadError   map[string]bool
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
@@ -169,8 +175,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
-		scrapeDuration:               make(map[string]float64),
-		lastScrapeSuccess:            make(map[string]bool),
+		scrapeResults:                make(map[string]scrapeResult),
 	}
 }
 

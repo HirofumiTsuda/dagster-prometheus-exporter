@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	config, err := config.Load()
+	cfg, err := config.Load()
 
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
@@ -20,7 +20,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server.RunServer(ctx, config)
+	server.RunServer(ctx, cfg)
 
 	log.Println("Application completely stopped.")
 }

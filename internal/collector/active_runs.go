@@ -39,7 +39,10 @@ type activeRunAggregate struct {
 // current status" for every active status, without needing to special-case
 // STARTED with a separate startTime field.
 func elapsedSince(run Run, now time.Time) float64 {
-	return now.Sub(time.Unix(int64(run.UpdateTime), 0)).Seconds()
+	// updateTime is a float64 of seconds, so converting via time.Unix would
+	// discard the fractional part. Subtracting in float64 keeps it — this is
+	// a duration metric, and there's no reason to round it to whole seconds.
+	return float64(now.UnixNano())/1e9 - run.UpdateTime
 }
 
 // CollectActiveRuns fetches every QUEUED/STARTING/STARTED run and folds
@@ -56,13 +59,9 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 
 	err := fetchRunPages(ctx, activeStatuses, 0, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
 		for _, run := range page {
-			location := unknownLocationName
-			if run.RepositoryOrigin != nil {
-				location = run.RepositoryOrigin.RepositoryLocationName
-			}
 			key := ActiveRunKey{
 				JobName:      run.JobName,
-				LocationName: location,
+				LocationName: run.location(),
 				Status:       run.Status,
 			}
 

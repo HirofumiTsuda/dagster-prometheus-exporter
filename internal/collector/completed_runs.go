@@ -39,11 +39,7 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 				maxUpdateTimeSeen = result.UpdateTime
 			}
 
-			location := unknownLocationName
-			if result.RepositoryOrigin != nil {
-				location = result.RepositoryOrigin.RepositoryLocationName
-			}
-
+			location := result.location()
 			key := JobKey{JobName: result.JobName, LocationName: location}
 			if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
 				c.lastRunStatus[key] = lastRunEntry{
