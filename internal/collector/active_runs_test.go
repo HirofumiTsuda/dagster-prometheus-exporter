@@ -200,3 +200,11 @@ func TestCollectActiveRunsAlsoTracksConcurrencyKeyBacklog(t *testing.T) {
 	assert.Equal(t, 0, c.concurrencyKeyBacklog["heavy_limit"],
 		"a previously-seen key should be zero-filled, not dropped, once its backlog clears")
 }
+
+func TestRunLocationFallsBackWhenOriginIsAbsent(t *testing.T) {
+	withOrigin := Run{RepositoryOrigin: &RunRepositoryOrigin{RepositoryLocationName: "loc_a"}}
+	assert.Equal(t, "loc_a", withOrigin.location())
+
+	assert.Equal(t, unknownLocationName, Run{}.location(),
+		"a run with no repositoryOrigin should land in the placeholder location rather than an empty label")
+}

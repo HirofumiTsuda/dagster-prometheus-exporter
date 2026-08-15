@@ -13,26 +13,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func RunServer(ctx context.Context, config *config.Config) {
-	portSuffix := fmt.Sprintf(":%d", config.Port)
-	c := collector.NewDagsterCollector(ctx, config.DagsterGraphQLEndpoint, config.LookbackWindow, config.CacheTTL, config.RunsPageSize, config.RunsUpdatedAfterSafetyMargin)
+func RunServer(ctx context.Context, cfg *config.Config) {
+	portSuffix := fmt.Sprintf(":%d", cfg.Port)
+	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
 	prometheus.MustRegister(c)
 	registerBuildInfo()
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.Handle("/readyz", newReadyzHandler(config.DagsterGraphQLEndpoint, config.DagsterScrapingTimeout))
+	mux.Handle("/readyz", newReadyzHandler(cfg.DagsterGraphQLEndpoint, cfg.DagsterScrapingTimeout))
 
 	srv := &http.Server{
 		Addr:    portSuffix,
 		Handler: mux,
 	}
 
-	go startScrape(ctx, c, config.DagsterScrapingInterval, config.DagsterScrapingTimeout)
+	go startScrape(ctx, c, cfg.DagsterScrapingInterval, cfg.DagsterScrapingTimeout)
 
 	go func() {
-		log.Printf("Starting Prometheus metrics server on port %d", config.Port)
+		log.Printf("Starting Prometheus metrics server on port %d", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("HTTP server ListenAndServe failed: %v", err)
 		}

@@ -58,7 +58,7 @@ func TestRecordScrapeResultFailureIncrementsErrorCounter(t *testing.T) {
 		"error counter should accumulate across failed scrapes, not just reflect the latest one")
 
 	c.mutex.Lock()
-	success := c.lastScrapeSuccess["definitions_roster"]
+	success := c.scrapeResults["definitions_roster"].success
 	c.mutex.Unlock()
 	assert.False(t, success)
 }
