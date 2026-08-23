@@ -3,7 +3,7 @@ name = "dagster-prometheus-exporter"
 version = "0.1.0"
 description = "A python environment used for tests"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "dagster>=1.13.15,<1.14",
     "dagster-webserver>=1.13.15,<1.14",
@@ -21,7 +21,7 @@ module_name = "dev.dagster_workspace.definitions"
 code_location_name = "dev-dagster-workspace"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
