@@ -1,0 +1,10 @@
+query GetAssetsLatestInfo($assetKeys: [AssetKeyInput!]!) {
+  assetsLatestInfo(assetKeys: $assetKeys) {
+    assetKey {
+      path
+    }
+    latestRun {
+      status
+    }
+  }
+}

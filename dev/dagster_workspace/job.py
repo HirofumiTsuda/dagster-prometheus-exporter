@@ -6,6 +6,7 @@ from dagster import (
     ScheduleDefinition,
     SensorEvaluationContext,
     SkipReason,
+    asset,
     job,
     op,
     sensor,
@@ -87,3 +88,27 @@ def failing_sensor(context: SensorEvaluationContext):
 
 
 sensors = [quick_job_sensor, failing_sensor]
+
+
+@asset
+def good_asset():
+    """An asset that materializes successfully every time, for exercising
+    dagster_asset_last_materialization_status{status="success"} and
+    dagster_asset_stale_status."""
+    return 1
+
+
+@asset
+def bad_asset():
+    """An asset that always fails to materialize, for exercising
+    dagster_asset_last_materialization_status{status="failure"} — the same
+    reasoning as failing_job/failing_sensor: assetsLatestInfo.latestRun is
+    the only source for this, since assetMaterializations only ever records
+    successful events (see issue #56's investigation notes)."""
+    raise RuntimeError(
+        "dev fixture: intentionally always fails, for exercising "
+        "dagster_asset_last_materialization_status{status=\"failure\"}"
+    )
+
+
+assets = [good_asset, bad_asset]
