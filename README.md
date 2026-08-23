@@ -11,7 +11,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/HirofumiTsuda/dagster-prometheus-exporter.svg)](https://pkg.go.dev/github.com/HirofumiTsuda/dagster-prometheus-exporter)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
 
-A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, run-queue backlog, and code-location load errors as Prometheus metrics.
+A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, asset staleness and materialization status, run-queue backlog, and code-location load errors as Prometheus metrics.
 
 ![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
 
@@ -66,14 +66,14 @@ flowchart LR
     Prometheus["Prometheus"]
     Grafana["Grafana"]
 
-    Exporter -- "poll every N seconds<br/>(runsOrError, repositoriesOrError,<br/>workspaceOrError)" --> Dagster
+    Exporter -- "poll every N seconds<br/>(runsOrError, repositoriesOrError,<br/>workspaceOrError, assetNodes)" --> Dagster
     Prometheus -- "scrape /metrics" --> Exporter
     Grafana -- query --> Prometheus
 ```
 
-A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Five collectors (definitions roster, active runs, completed runs, code-location load status, daemon health) run concurrently on every scrape.
+A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Six collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status) run concurrently on every scrape.
 
-For the package layout, why there are four separate collectors, and how completed-run fetching stays incremental instead of re-scanning everything every cycle, see [docs/architecture.md](docs/architecture.md).
+For the package layout, why there are six separate collectors, and how completed-run fetching stays incremental instead of re-scanning everything every cycle, see [docs/architecture.md](docs/architecture.md).
 
 ## Metrics
 
@@ -98,10 +98,12 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_sensor_status` | Gauge | Whether a sensor is currently on or off. |
 | `dagster_sensor_last_tick_status` | Gauge | Outcome of a sensor's most recent tick. |
 | `dagster_sensor_last_tick_timestamp_seconds` | Gauge | When a sensor last ticked, so a stalled evaluation loop is detectable. |
+| `dagster_asset_stale_status` | Gauge | Whether an asset's data is missing, stale, or fresh. |
+| `dagster_asset_last_materialization_status` | Gauge | Outcome of an asset's most recently launched materializing run — the only one of the two that shows a failed run, since staleness alone can't tell "failed" from "never run". |
 
 ### Exporter self-health
 
-These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status` — see [docs/architecture.md](docs/architecture.md)).
+These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status` — see [docs/architecture.md](docs/architecture.md)).
 
 | Metric | Type | Description |
 | --- | --- | --- |
@@ -139,6 +141,12 @@ dagster_schedule_last_tick_status{schedule_name="daily_refresh",location="dev-da
 dagster_sensor_status{sensor_name="new_file_sensor",location="dev-dagster-workspace",status="running"} 1
 
 dagster_sensor_last_tick_status{sensor_name="new_file_sensor",location="dev-dagster-workspace",status="skipped"} 1
+
+dagster_asset_stale_status{asset_key="good_asset",status="fresh"} 1
+dagster_asset_stale_status{asset_key="bad_asset",status="missing"} 1
+
+dagster_asset_last_materialization_status{asset_key="good_asset",status="success"} 1
+dagster_asset_last_materialization_status{asset_key="bad_asset",status="failure"} 1
 ```
 
 ### PromQL examples
@@ -182,6 +190,12 @@ dagster_schedule_last_tick_status{status!="success"} == 1
 dagster_sensor_status{status="running"} == 1
 and on (sensor_name, location)
 dagster_sensor_last_tick_status{status="failure"} == 1
+
+# Assets whose most recent materializing run failed
+# (dagster_asset_stale_status alone can't show this: it's derived from
+# assetMaterializations, which only records successful events, so a failing
+# asset looks the same as one that has simply never run)
+dagster_asset_last_materialization_status{status="failure"}
 ```
 
 ## Endpoints
@@ -363,7 +377,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above — Go steps only when `.g
 - [x] Run queue concurrency-key backlog
 - [x] Schedule tick status
 - [x] Sensor tick status
-- [ ] Asset materialization metrics — several open design questions (metric shape, `asset_key` label encoding, collector structure); see [#56](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/56)
+- [x] Asset materialization metrics ([#56](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/56))
 - [x] Published container image / tagged release
 - [x] Helm chart for Kubernetes deployment
 

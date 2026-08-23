@@ -145,9 +145,25 @@ Same as `dagster_schedule_last_tick_timestamp_seconds`, for sensors — and the 
 time() - dagster_sensor_last_tick_timestamp_seconds > 300
 ```
 
+## `dagster_asset_stale_status` (Gauge)
+
+Labels: `asset_key`, `status`
+
+Always `1`; an "info" metric reporting whether an asset's data is `missing`, `stale`, or `fresh`, from Dagster's `assetNodes.staleStatus`. `asset_key` is the asset's path segments joined with `/` (e.g. `my_dbt_project/customers`), the same separator Dagster's own UI uses. No series at all for an asset Dagster reports no computable stale status for (the field is nullable in the schema).
+
+Note this is derived from `assetMaterializations`, which only ever records successful events — a `failure`-status run in `dagster_asset_last_materialization_status` below still shows `missing`/`stale` here rather than anything reflecting the failure. Use the two metrics together, not this one alone, to tell "never materialized" apart from "materialization keeps failing".
+
+## `dagster_asset_last_materialization_status` (Gauge)
+
+Labels: `asset_key`, `status`
+
+Always `1`; status of an asset's most recently launched materializing run (`assetsLatestInfo.latestRun.status`, e.g. `success`, `failure`, `started`). No series at all for an asset that has never had a run.
+
+This exists because `dagster_asset_stale_status` can't answer "did the last run succeed": `assetMaterializations` (and the `staleStatus` derived from it) only records successful events, so a failing asset and one that has simply never run both look `missing` there. This metric reads the run itself instead, so a failed run is visible even though it left the asset's materialization history untouched.
+
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, or `daemon_health` (the five concurrent collectors described in [docs/architecture.md](architecture.md)).
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, or `asset_status` (the six concurrent collectors described in [docs/architecture.md](architecture.md)).
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

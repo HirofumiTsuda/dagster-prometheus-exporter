@@ -1,0 +1,8 @@
+query GetAssetNodes {
+  assetNodes {
+    assetKey {
+      path
+    }
+    staleStatus
+  }
+}

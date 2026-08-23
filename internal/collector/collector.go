@@ -12,24 +12,26 @@ import (
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
-	activeRunsDesc            *prometheus.Desc
-	completedRunsCounter      *prometheus.CounterVec
-	lastRunStatusDesc         *prometheus.Desc
-	scrapeDurationDesc        *prometheus.Desc
-	lastScrapeSuccessDesc     *prometheus.Desc
-	scrapeErrorsCounter       *prometheus.CounterVec
-	codeLocationLoadErrorDesc *prometheus.Desc
-	lastRunDurationDesc       *prometheus.Desc
-	activeRunDurationDesc     *prometheus.Desc
-	concurrencyKeyBacklogDesc *prometheus.Desc
-	scheduleStatusDesc        *prometheus.Desc
-	scheduleTickStatusDesc    *prometheus.Desc
-	scheduleTickTimestampDesc *prometheus.Desc
-	sensorStatusDesc          *prometheus.Desc
-	sensorTickStatusDesc      *prometheus.Desc
-	sensorTickTimestampDesc   *prometheus.Desc
-	daemonHealthyDesc         *prometheus.Desc
-	daemonLastHeartbeatDesc   *prometheus.Desc
+	activeRunsDesc                     *prometheus.Desc
+	completedRunsCounter               *prometheus.CounterVec
+	lastRunStatusDesc                  *prometheus.Desc
+	scrapeDurationDesc                 *prometheus.Desc
+	lastScrapeSuccessDesc              *prometheus.Desc
+	scrapeErrorsCounter                *prometheus.CounterVec
+	codeLocationLoadErrorDesc          *prometheus.Desc
+	lastRunDurationDesc                *prometheus.Desc
+	activeRunDurationDesc              *prometheus.Desc
+	concurrencyKeyBacklogDesc          *prometheus.Desc
+	scheduleStatusDesc                 *prometheus.Desc
+	scheduleTickStatusDesc             *prometheus.Desc
+	scheduleTickTimestampDesc          *prometheus.Desc
+	sensorStatusDesc                   *prometheus.Desc
+	sensorTickStatusDesc               *prometheus.Desc
+	sensorTickTimestampDesc            *prometheus.Desc
+	daemonHealthyDesc                  *prometheus.Desc
+	daemonLastHeartbeatDesc            *prometheus.Desc
+	assetStaleStatusDesc               *prometheus.Desc
+	assetLastMaterializationStatusDesc *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
@@ -48,6 +50,7 @@ type DagsterCollector struct {
 	scrapeResults           map[string]scrapeResult
 	codeLocationLoadError   map[string]bool
 	daemonHealth            map[string]daemonHealthEntry
+	assetStatus             map[string]assetStatusEntry
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -189,6 +192,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"daemon_type"},
 			nil,
 		),
+		assetStaleStatusDesc: prometheus.NewDesc(
+			"dagster_asset_stale_status",
+			"Whether an asset's data is missing, stale, or fresh (value is always 1; status is carried in the status label, one of missing/stale/fresh). Absent for an asset Dagster reports no computable stale status for",
+			[]string{"asset_key", "status"},
+			nil,
+		),
+		assetLastMaterializationStatusDesc: prometheus.NewDesc(
+			"dagster_asset_last_materialization_status",
+			"Status of an asset's most recent materializing run (value is always 1; status is carried in the status label). Absent for an asset that has never had a run — unlike stale status, this is derived from the run itself rather than assetMaterializations, so a run that fails before producing a materialization still shows up here (see docs/metrics.md)",
+			[]string{"asset_key", "status"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -216,6 +231,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.sensorTickTimestampDesc
 	ch <- c.daemonHealthyDesc
 	ch <- c.daemonLastHeartbeatDesc
+	ch <- c.assetStaleStatusDesc
+	ch <- c.assetLastMaterializationStatusDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -231,6 +248,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectSensorStatus(c, ch)
 	reflectSensorTickStatus(c, ch)
 	reflectDaemonHealth(c, ch)
+	reflectAssetStatus(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

@@ -9,17 +9,19 @@ The exporter is a single Go binary with no external state store — everything i
 - `cmd/exporter` — entrypoint; loads config and starts the server.
 - `internal/config` — reads settings from environment variables.
 - `internal/server` — runs the HTTP server (`/metrics`, `/healthz`, `/readyz`) and a background ticker that triggers a scrape on `DAGSTER_SCRAPING_INTERVAL_SECONDS`.
-- `internal/collector` — on each scrape, queries Dagster's GraphQL API (active runs, completed runs, the definitions roster, and each code location's load status) and updates the in-memory state behind a mutex; `DagsterCollector` implements `prometheus.Collector` and renders that state into metrics whenever Prometheus scrapes `/metrics`.
+- `internal/collector` — on each scrape, queries Dagster's GraphQL API (active runs, completed runs, the definitions roster, each code location's load status, daemon health, and asset status) and updates the in-memory state behind a mutex; `DagsterCollector` implements `prometheus.Collector` and renders that state into metrics whenever Prometheus scrapes `/metrics`.
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.
 
-## Why five collectors, and why they're split the way they are
+## Why six collectors, and why they're split the way they are
 
-The five collectors (definitions roster, active runs, completed runs, code-location load status, daemon health) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
+The six collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
 
 The code-location load status collector is intentionally independent of the definitions-roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` in the [metrics reference](metrics.md).
 
 The daemon-health collector is likewise independent: `instance.daemonHealth` is a top-level field, not something reachable from `repositoriesOrError`, so it needs its own query. It is also the only collector that reports on Dagster's *machinery* rather than its work — everything else here describes runs, schedules, sensors and code locations, all of which the webserver keeps answering perfectly while the daemon is down.
+
+The asset-status collector is a third independent one, and the only one that makes two GraphQL round trips instead of one: `assetNodes` (every asset defined, across every code location, no `repositorySelector` needed) has to run first, because `assetsLatestInfo` needs the asset keys it returns as its `assetKeys` argument. Neither field hangs off `repositoriesOrError`. See `dagster_asset_last_materialization_status` in the [metrics reference](metrics.md) for why staleness alone (`assetNodes.staleStatus`) can't tell a failed run apart from one that never happened.
 
 `dagster_run_queue_concurrency_key_backlog` is folded into the active-runs collector instead of getting its own: it only needs `QUEUED` runs' tags, which that collector already fetches on every page, so a separate query would just re-fetch the same runs a second time for no reason.
 

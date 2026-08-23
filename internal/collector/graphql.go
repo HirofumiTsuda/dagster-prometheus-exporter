@@ -425,6 +425,104 @@ func getDaemonHealth(ctx context.Context, request *GraphQLRequest, dagsterGraphQ
 	return &resp, nil
 }
 
+// AssetKeyPath is a Dagster asset key: an ordered path (e.g. a dbt project
+// and model name), not a single string. assetKeyLabel joins it into the
+// Prometheus label value.
+type AssetKeyPath []string
+
+// GraphQLAssetNodesResponse is the shape of assetNodes: every asset
+// currently defined, across every code location, in one fetch — unlike
+// repositoriesOrError, assetNodes takes no repositorySelector and isn't
+// nested under a per-location union, so there's no __typename to check here
+// (the same reasoning as GraphQLDaemonHealthResponse).
+//
+// staleStatus is nullable in the schema (an asset can have no computable
+// staleness, e.g. one with no defined freshness policy or partitions
+// Dagster hasn't evaluated yet), hence the pointer.
+type GraphQLAssetNodesResponse struct {
+	Data struct {
+		AssetNodes []struct {
+			AssetKey struct {
+				Path AssetKeyPath `json:"path"`
+			} `json:"assetKey"`
+			StaleStatus *string `json:"staleStatus"`
+		} `json:"assetNodes"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_asset_nodes.graphql
+var assetNodesQuery string
+
+func getAssetNodesRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: assetNodesQuery,
+	}
+}
+
+func getAssetNodes(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLAssetNodesResponse, error) {
+	var resp GraphQLAssetNodesResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// GraphQLAssetsLatestInfoResponse is the shape of assetsLatestInfo, queried
+// separately from assetNodes (see CollectAssetStatus) because it needs the
+// asset keys assetNodes just returned.
+//
+// latestRun is nullable: an asset that has never had a materializing run
+// attempted has no run to report a status for. assetMaterializations would
+// answer a related but different question and can't stand in for this one —
+// it only ever records successful events, so a run that failed before
+// producing a materialization leaves no trace there at all (issue #56).
+type GraphQLAssetsLatestInfoResponse struct {
+	Data struct {
+		AssetsLatestInfo []struct {
+			AssetKey struct {
+				Path AssetKeyPath `json:"path"`
+			} `json:"assetKey"`
+			LatestRun *struct {
+				Status string `json:"status"`
+			} `json:"latestRun"`
+		} `json:"assetsLatestInfo"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_assets_latest_info.graphql
+var assetsLatestInfoQuery string
+
+// assetKeyInput is the wire shape GraphQL's AssetKeyInput expects: an object
+// wrapping the path, not the bare array AssetKeyPath marshals to on its own.
+type assetKeyInput struct {
+	Path AssetKeyPath `json:"path"`
+}
+
+func getAssetsLatestInfoRequest(assetKeys []AssetKeyPath) *GraphQLRequest {
+	inputs := make([]assetKeyInput, len(assetKeys))
+	for i, path := range assetKeys {
+		inputs[i] = assetKeyInput{Path: path}
+	}
+	return &GraphQLRequest{
+		Query: assetsLatestInfoQuery,
+		Variables: map[string]interface{}{
+			"assetKeys": inputs,
+		},
+	}
+}
+
+func getAssetsLatestInfo(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLAssetsLatestInfoResponse, error) {
+	var resp GraphQLAssetsLatestInfoResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 //go:embed queries/get_version.graphql
 var versionQuery string
 
