@@ -35,6 +35,45 @@ jobs:
       # helm used for local chart testing.
       - uses: jdx/mise-action@v4
 
+      # For "Determine expected metric families" below — TestListMetricNames
+      # runs on the runner directly, not inside a container.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # See internal/server/metric_names_test.go and issue #90: this is the
+      # single source of truth for "which metric families should exist",
+      # so the assertion below checks all of them instead of the one
+      # (dagster_active_runs) it used to. #85 — two whole tick-status
+      # families that had never emitted a single series — would have been
+      # invisible to this job before this change, exactly like it was
+      # invisible to the unit tests mocking GraphQL.
+      - name: Determine expected metric families
+        run: |
+          go test -run TestListMetricNames -v ./internal/server/... \
+            | grep '^METRIC:' | sed 's/^METRIC: //' | sort > /tmp/expected-metrics.txt
+          echo "--- expected metric families ($(wc -l < /tmp/expected-metrics.txt)) ---"
+          cat /tmp/expected-metrics.txt
+
+          # Not asserted yet, each for a different reason:
+          #   dagster_run_queue_concurrency_key_backlog needs 3+ queued
+          #     heavy_job runs (its concurrency limit is 1) — no fixture
+          #     here creates that condition.
+          #   dagster_asset_last_materialization_status needs an asset to
+          #     actually be materialized — nothing here triggers one.
+          #   dagster_exporter_scrape_errors_total only appears once a
+          #     scrape has failed, which a healthy e2e run never does — it
+          #     can't be asserted present here even in principle.
+          # Tracked in #90 as follow-up work, not silently dropped.
+          cat > /tmp/not-yet-asserted.txt <<'NAMES'
+          dagster_run_queue_concurrency_key_backlog
+          dagster_asset_last_materialization_status
+          dagster_exporter_scrape_errors_total
+          NAMES
+          grep -vFxf /tmp/not-yet-asserted.txt /tmp/expected-metrics.txt > /tmp/expected-metrics-asserted.txt
+          echo "--- asserted this run ($(wc -l < /tmp/expected-metrics-asserted.txt) of $(wc -l < /tmp/expected-metrics.txt)) ---"
+          cat /tmp/expected-metrics-asserted.txt
+
       - name: Build exporter and Dagster dev images
         run: |
           docker build -f docker/exporter.Dockerfile -t dagster-prometheus-exporter-e2e:exporter .
@@ -56,7 +95,7 @@ jobs:
             -f dev/kubernetes/exporter-e2e-values.yaml \
             --wait --timeout=120s
 
-      - name: Assert /readyz and /metrics report real data
+      - name: Assert /readyz and every metric family reports real data
         run: |
           kubectl port-forward svc/exporter-e2e-dagster-prometheus-exporter 9101:9101 &
           PORT_FORWARD_PID=$!
@@ -71,20 +110,34 @@ jobs:
           echo "$READYZ"
           echo "$READYZ" | grep -q '"status":"OK"' || { echo "::error::exporter is not ready against the real Dagster instance"; exit 1; }
 
-          echo "--- /metrics (dagster_active_runs) ---"
+          echo "--- /metrics (waiting for every asserted family in expected-metrics-asserted.txt) ---"
           # /readyz being OK only proves live Dagster connectivity, not that
           # a background scrape has completed yet — the HTTP server and the
           # scraper goroutine start concurrently (see internal/server.go),
           # and the readinessProbe is /healthz (unconditionally 200), so the
-          # pod can be Ready before the first scrape lands. Poll for up to
-          # ~40s (a bit more than DAGSTER_SCRAPING_INTERVAL_SECONDS' 15s
-          # default) instead of asserting on a single sample.
-          for i in $(seq 1 20); do
+          # pod can be Ready before the first scrape lands. Most families
+          # are zero-filled from the very first scrape (a scrape interval
+          # of 15s), but the tick-status/timestamp families and
+          # dagster_last_run_info/_duration_seconds need the dev fixture's
+          # schedule (cron "* * * * *") or sensors (30s interval) to have
+          # actually ticked at least once — up to ~60s in the worst case.
+          # Poll for up to ~100s total rather than asserting on one sample.
+          MISSING=""
+          for i in $(seq 1 50); do
             METRICS=$(curl -sf http://localhost:9101/metrics)
-            echo "$METRICS" | grep -q '^dagster_active_runs{' && break
+            MISSING=""
+            while read -r name; do
+              echo "$METRICS" | grep -q "^${name}{" || MISSING="$MISSING $name"
+            done < /tmp/expected-metrics-asserted.txt
+            [ -z "$MISSING" ] && break
             sleep 2
           done
-          echo "$METRICS" | grep '^dagster_active_runs{' || { echo "::error::no dagster_active_runs series found after waiting for a scrape — exporter isn't reporting real data"; exit 1; }
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::the following metric families never appeared on /metrics after waiting: ${MISSING# }"
+            exit 1
+          fi
+          echo "all $(wc -l < /tmp/expected-metrics-asserted.txt) asserted metric families are present"
 
           kill "$PORT_FORWARD_PID"
 
