@@ -1,0 +1,13 @@
+name: "jaffle_shop"
+version: "1.0.0"
+config-version: 2
+
+profile: "jaffle_shop"
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+clean-targets: ["target"]
+
+# Materialization is declared per-model via `{{ config(...) }}` (see
+# models/staging/stg_customers.sql, models/marts/customers.sql) rather than
+# here by folder, so there's one place to look, not two.

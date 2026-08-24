@@ -305,6 +305,18 @@ Each produces a different tick status, so all three show up at once and an alert
 
 `failing_sensor` logs an error on every evaluation by design — intentional, like `failing_job` and the broken code location, not a sign the dev stack is misconfigured.
 
+### Testing asset staleness
+
+`good_asset`/`bad_asset` are independent assets with no dependency between them — enough to exercise `dagster_asset_last_materialization_status`, but not the `stale` value of `dagster_asset_stale_status`, which only fires when an asset's *data version* has diverged from its upstream's. `dev/jaffle_shop/` (added in [#98](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/98)) adds a real dependency chain via [dagster-dbt](https://docs.dagster.io/integrations/libraries/dbt) — `raw_customers` (seed) → `stg_customers` (staging model) → `customers` (mart) — for exactly this. See [`dev/jaffle_shop/README.md`](dev/jaffle_shop/README.md) for what it is and its attribution.
+
+**Re-running the same code does not produce `stale`.** Dagster's staleness for dbt assets is based on a `code_version` — a checksum of the dbt node's compiled SQL/seed file, not a materialization timestamp — so re-running an upstream model whose code hasn't changed leaves its data version unchanged, and nothing downstream becomes stale. To actually see `stale`:
+
+1. Materialize the whole chain: select `raw_customers*` (Dagster's asset-selection DSL — the unbounded-downstream operator is a trailing `*`, not `+`, which only reaches one hop) and materialize. All three report `fresh`.
+2. Edit `dev/jaffle_shop/models/staging/stg_customers.sql` (anything that changes its text — even a comment).
+3. **Reload the code location before re-materializing.** Verified against a real instance: a running `dagster dev` process does not pick up a `.sql`-only change on its own. Skipping this step doesn't just leave the change invisible — it actively produces a wrong reading, because re-materializing then runs against the new file (an out-of-process `dbt build` re-parses from disk) while the long-running webserver still compares against the *old* code version it loaded at startup. The result: `stg_customers` incorrectly reports `stale` too, alongside `customers` — the desync makes it look like the just-materialized asset is the stale one. Reload first (Dagit → Deployment → the code location → **Reload**, or `mutation { reloadRepositoryLocation(repositoryLocationName: "dev-dagster-workspace") { __typename } }`) and this goes away.
+4. Re-materialize only `stg_customers`.
+5. Check `/metrics`: `customers` now reports `dagster_asset_stale_status{asset_key="customers",status="stale"} 1`, while `stg_customers`/`raw_customers` correctly stay `fresh`.
+
 ### Testing the Helm chart against a real Dagster (kind)
 
 `.github/workflows/helm-e2e.yml` (status: see the badge at the top of this README) installs the chart into a [kind](https://kind.sigs.k8s.io/) cluster against a real Dagster instance and asserts `/readyz`/`/metrics` report real data — `helm lint`/`helm template` (in `helm-lint.yml`) only catch template syntax errors, not "does this chart actually work," and since the exporter image is always built fresh from the current checkout, this also exercises the Go server itself, not just the chart. The Dagster instance is a plain Deployment+Service (`dev/kubernetes/dagster-deployment.yaml`, running the same `docker/dagster-dev.Dockerfile` image as the `docker compose` dev stack) — a CI-only test fixture, not part of the chart itself. Both it and the exporter image are always built from the local checkout, never pulled from a registry, so the test validates the current state of `main`, not whatever was last published.
