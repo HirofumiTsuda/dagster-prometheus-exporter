@@ -12,9 +12,15 @@ from dagster_dbt import DbtCliResource, DbtProject, dbt_assets
 # project is and why it's hand-written rather than vendored.
 jaffle_shop_project = DbtProject(project_dir=Path(__file__).parent.parent / "jaffle_shop")
 
-# Builds the manifest (dbt parse) on `dagster dev`/webserver startup if it's
-# missing or stale, so there's no separate "run dbt build once" setup step
-# for the dev stack. No-ops (and stays silent) outside of a dev context.
+# manifest.json isn't checked in or built by any script here -- this line
+# is the only thing that produces it. prepare_if_dev() only acts when
+# DAGSTER_IS_DEV_CLI is set (which `dagster dev` sets on itself), and when it
+# does, it shells out to `dbt parse --quiet`, writing
+# dev/jaffle_shop/target/manifest.json fresh on every `dagster dev` startup
+# (see dagster_dbt.dbt_project.DagsterDbtProjectPreparer.prepare). Outside of
+# `dagster dev` this is a no-op and dagster-dbt expects manifest.json to
+# already exist from a build-time `dbt parse`/`dbt build` -- doesn't apply
+# here since docker/dagster-dev.Dockerfile's CMD is always `dagster dev`.
 jaffle_shop_project.prepare_if_dev()
 
 
