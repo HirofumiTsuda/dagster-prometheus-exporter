@@ -57,6 +57,10 @@ dev/dagster_home/history/
 dev/dagster_home/schedules/
 dev/dagster_home/storage/
 dev/dagster_home/logs/
+dev/dagster_home/jaffle_shop.duckdb
+dev/jaffle_shop/target/
+dev/jaffle_shop/logs/
+dev/jaffle_shop/.user.yml
 
 # Claude Code: settings.json (shared) is committed; settings.local.json is a
 # per-user permission allowlist and isn't meant to be shared.

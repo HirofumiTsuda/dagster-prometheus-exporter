@@ -7,6 +7,12 @@ requires-python = ">=3.13"
 dependencies = [
     "dagster>=1.13.15,<1.14",
     "dagster-webserver>=1.13.15,<1.14",
+    # Pinned exactly (not a range): dagster-dbt releases track the exact
+    # dagster patch they were built against 1:1 (0.29.15 <-> dagster
+    # 1.13.15), so a range here could pull in a dagster-dbt that demands a
+    # newer dagster than the one actually locked/verified (see issue #67).
+    "dagster-dbt==0.29.15",
+    "dbt-duckdb>=1.11,<1.12",
 ]
 
 [build-system]

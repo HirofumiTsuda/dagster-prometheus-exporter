@@ -1,0 +1,14 @@
+# Points at DAGSTER_HOME rather than a path relative to the project
+# directory, since dbt-duckdb resolves `path` against the current working
+# directory (not the project directory), and that differs between how the
+# exporter's docker-compose service and a manual `docker compose run`
+# invocation set cwd. DAGSTER_HOME is set unconditionally by
+# docker/dagster-dev.Dockerfile for exactly this kind of path stability
+# (see dev/dagster_home's other runtime state).
+jaffle_shop:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DAGSTER_HOME') }}/jaffle_shop.duckdb"
+      threads: 1
