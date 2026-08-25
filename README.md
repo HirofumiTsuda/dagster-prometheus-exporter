@@ -251,7 +251,7 @@ Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.4 \
+  --version 0.1.5 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
