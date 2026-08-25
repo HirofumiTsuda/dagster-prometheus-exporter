@@ -55,19 +55,16 @@ jobs:
           echo "--- expected metric families ($(wc -l < /tmp/expected-metrics.txt)) ---"
           cat /tmp/expected-metrics.txt
 
-          # Not asserted yet, each for a different reason:
-          #   dagster_run_queue_concurrency_key_backlog needs 3+ queued
-          #     heavy_job runs (its concurrency limit is 1) — no fixture
-          #     here creates that condition.
-          #   dagster_asset_last_materialization_status needs an asset to
-          #     actually be materialized — nothing here triggers one.
-          #   dagster_exporter_scrape_errors_total only appears once a
-          #     scrape has failed, which a healthy e2e run never does — it
-          #     can't be asserted present here even in principle.
-          # Tracked in #90 as follow-up work, not silently dropped.
+          # dagster_run_queue_concurrency_key_backlog and
+          # dagster_asset_last_materialization_status used to be excluded
+          # here (needed a run-queue backlog / a materialized asset that
+          # nothing created) — the "Trigger asset materialization and
+          # run-queue backlog conditions" step now creates both conditions.
+          #
+          # dagster_exporter_scrape_errors_total only appears once a scrape
+          # has failed, which a healthy e2e run never does — it can't be
+          # asserted present here even in principle, so it stays excluded.
           cat > /tmp/not-yet-asserted.txt <<'NAMES'
-          dagster_run_queue_concurrency_key_backlog
-          dagster_asset_last_materialization_status
           dagster_exporter_scrape_errors_total
           NAMES
           grep -vFxf /tmp/not-yet-asserted.txt /tmp/expected-metrics.txt > /tmp/expected-metrics-asserted.txt
@@ -88,6 +85,54 @@ jobs:
         run: |
           kubectl apply -f dev/kubernetes/dagster-deployment.yaml
           kubectl rollout status deployment/dagster --timeout=120s
+
+      # dagster_asset_last_materialization_status and
+      # dagster_run_queue_concurrency_key_backlog don't appear from just
+      # standing the fixtures up — see the two "needs" comments removed
+      # from the not-yet-asserted list below. Triggered here (against
+      # Dagster's own GraphQL, not the exporter) so the scrape+poll loop in
+      # the next-next step has the ~100s it already budgets to pick both up,
+      # rather than racing a trigger fired right before that poll starts.
+      - name: Trigger asset materialization and run-queue backlog conditions
+        run: |
+          kubectl port-forward svc/dagster 3000:3000 &
+          DAGSTER_PORT_FORWARD_PID=$!
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:3000/server_info > /dev/null && break
+            sleep 1
+          done
+
+          # One launch per asset, not both in a single run: this metric is
+          # derived from the *run's* status (assetsLatestInfo.latestRun),
+          # not the individual asset's step (see docs/metrics.md) --
+          # materializing them together would make good_asset inherit
+          # bad_asset's failure, since one failing step fails the whole run.
+          # Verified locally: that's exactly what happened before this was
+          # split into two launches.
+          echo "--- materializing good_asset (dagster_asset_last_materialization_status needs a run, not just Definitions loading) ---"
+          curl -sf -X POST http://localhost:3000/graphql -H 'Content-Type: application/json' -d '{
+            "query": "mutation($e: ExecutionParams!) { launchPipelineExecution(executionParams: $e) { __typename ... on LaunchRunSuccess { run { runId status } } ... on PythonError { message } } }",
+            "variables": {"e": {"selector": {"repositoryLocationName": "dev-dagster-workspace", "repositoryName": "__repository__", "jobName": "__ASSET_JOB", "assetSelection": [{"path": ["good_asset"]}]}, "mode": "default"}}
+          }'
+          echo
+
+          echo "--- materializing bad_asset ---"
+          curl -sf -X POST http://localhost:3000/graphql -H 'Content-Type: application/json' -d '{
+            "query": "mutation($e: ExecutionParams!) { launchPipelineExecution(executionParams: $e) { __typename ... on LaunchRunSuccess { run { runId status } } ... on PythonError { message } } }",
+            "variables": {"e": {"selector": {"repositoryLocationName": "dev-dagster-workspace", "repositoryName": "__repository__", "jobName": "__ASSET_JOB", "assetSelection": [{"path": ["bad_asset"]}]}, "mode": "default"}}
+          }'
+          echo
+
+          echo "--- launching 3x heavy_job (concurrency_key=heavy_limit, limit 1 in dev/dagster_home/dagster.yaml -- 2 will queue) ---"
+          for i in 1 2 3; do
+            curl -sf -X POST http://localhost:3000/graphql -H 'Content-Type: application/json' -d '{
+              "query": "mutation($e: ExecutionParams!) { launchPipelineExecution(executionParams: $e) { __typename ... on LaunchRunSuccess { run { runId status } } ... on PythonError { message } } }",
+              "variables": {"e": {"selector": {"repositoryLocationName": "dev-dagster-workspace", "repositoryName": "__repository__", "jobName": "heavy_job"}, "mode": "default"}}
+            }'
+            echo
+          done
+
+          kill "$DAGSTER_PORT_FORWARD_PID"
 
       - name: Install the exporter chart
         run: |
