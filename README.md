@@ -47,7 +47,7 @@ docker compose up --build
 
 Pinned against Dagster **1.13.15** (`pyproject.toml`/`uv.lock`, for the local dev stack) — this is the version every metric here has actually been verified against. Dagster's GraphQL API isn't a stable, versioned contract — fields and types can change between releases — so this exporter isn't guaranteed to work against significantly older or newer Dagster versions in general.
 
-That said, spot-checks against **1.12.0** and **1.13.19** (real instance, every metric family asserted, not just "does it install") found no incompatibilities — see [issue #67](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/67) for what was checked. Versions between these three are more likely than not to work too, but haven't been individually verified. If you hit a GraphQL error running against a different version, please [open an issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose).
+That said, spot-checks against **1.11.16, 1.12.0, 1.12.22, and 1.13.19** (real instance, every metric family asserted, not just "does it install") found no incompatibilities — see [issue #67](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/67) for what was checked, including one benign cross-version difference in `dagster_daemon_healthy` (see [docs/metrics.md](docs/metrics.md)). Versions between these are more likely than not to work too, but haven't been individually verified. If you hit a GraphQL error running against a different version, please [open an issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose).
 
 ## Motivation
 

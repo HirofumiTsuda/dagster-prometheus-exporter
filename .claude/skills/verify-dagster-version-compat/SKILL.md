@@ -158,6 +158,15 @@ might rename/add/remove a daemon type), all 3 distinct tick statuses
 (success/skipped/failure) actually showing, stale status resolving without
 error.
 
+This has already found a real, benign difference: `1.11.16` reports only 5
+daemon types, missing `FRESHNESS_DAEMON` (introduced sometime in the
+`1.12.0` cycle). Confirmed via the raw `instance.daemonHealth` query, not
+assumed -- it's Dagster itself not reporting that daemon type on `1.11.16`,
+not an exporter bug (the collector's daemon-health loop has no hardcoded
+expected list, so it already handles this correctly). Still worth recording
+in `docs/metrics.md` and the issue, since a user on an older version
+shouldn't read a missing row as broken.
+
 ## 6. Revert -- do not leave the version bump in place
 
 ```sh

@@ -54,7 +54,7 @@ A code location can fail to load independently of any job/run activity — `dags
 
 Labels: `daemon_type`, `required`
 
-`1` if the daemon is currently healthy, `0` otherwise. `daemon_type` is one of Dagster's daemons — on 1.13.15: `SCHEDULER`, `SENSOR`, `BACKFILL`, `QUEUED_RUN_COORDINATOR`, `ASSET`, `FRESHNESS_DAEMON`.
+`1` if the daemon is currently healthy, `0` otherwise. `daemon_type` is one of Dagster's daemons — on 1.13.15: `SCHEDULER`, `SENSOR`, `BACKFILL`, `QUEUED_RUN_COORDINATOR`, `ASSET`, `FRESHNESS_DAEMON`. This list isn't hardcoded here — the collector reports whatever `instance.daemonHealth.allDaemonStatuses` returns, so it varies by Dagster version: verified `FRESHNESS_DAEMON` doesn't exist at all on 1.11.16 (only 5 daemon types), appearing sometime in the 1.12.0 cycle ([#67](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/67)). Don't read a missing `FRESHNESS_DAEMON` row as broken on an older Dagster version.
 
 This is the only metric here that reports on Dagster's machinery rather than its work, and it answers a question none of the others can: **is the scheduler actually running?** When the daemon dies, everything else keeps looking healthy — `dagster_schedule_status` still reports `running` (the schedule *is* enabled; that metric is about the on/off state, not the daemon), the last tick status stays frozen at whatever it was, active runs simply go quiet, and `dagster_exporter_last_scrape_success` stays `1` because the GraphQL endpoint is served by the webserver, which is fine. Nothing changes. Without this metric, "the scheduler is dead" and "nothing was scheduled" are indistinguishable.
 
