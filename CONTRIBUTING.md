@@ -2,7 +2,7 @@
 
 ## Reporting bugs / requesting features
 
-Open a [GitHub issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose) using the appropriate template.
+Open a [GitHub issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose) using the appropriate template. For a security vulnerability, see [SECURITY.md](SECURITY.md) instead — don't file a public issue.
 
 ## Submitting a pull request
 
