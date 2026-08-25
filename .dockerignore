@@ -1,0 +1,28 @@
+# Both docker/exporter.Dockerfile and docker/dagster-dev.Dockerfile build
+# with `context: .` (docker-compose.yaml), and dagster-dev.Dockerfile does
+# `COPY dev/ dev/` -- without this file, that copies whatever local runtime
+# state happens to be sitting in dev/dagster_home (run history, event log
+# storage, the jaffle_shop DuckDB file) straight into the image. Caught by
+# accident: a "fresh" container built locally came up reporting materialized
+# assets from weeks of local dev/testing history baked into dev/dagster_home
+# from an earlier manual run. Mirrors the runtime-state entries in
+# .gitignore's "repository specific rules" section -- same reasoning, same
+# paths, different consumer (Docker's build context vs git's working tree).
+dev/dagster_home/.nux/
+dev/dagster_home/.telemetry/
+dev/dagster_home/history/
+dev/dagster_home/schedules/
+dev/dagster_home/storage/
+dev/dagster_home/logs/
+dev/dagster_home/jaffle_shop.duckdb
+dev/jaffle_shop/target/
+dev/jaffle_shop/logs/
+dev/jaffle_shop/.user.yml
+
+# Standard build-context bloat -- neither Dockerfile references these paths,
+# so excluding them only shrinks what gets sent to the Docker daemon.
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

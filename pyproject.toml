@@ -7,10 +7,21 @@ requires-python = ">=3.13"
 dependencies = [
     "dagster>=1.13.15,<1.14",
     "dagster-webserver>=1.13.15,<1.14",
-    # Pinned exactly (not a range): dagster-dbt releases track the exact
-    # dagster patch they were built against 1:1 (0.29.15 <-> dagster
-    # 1.13.15), so a range here could pull in a dagster-dbt that demands a
-    # newer dagster than the one actually locked/verified (see issue #67).
+]
+
+[dependency-groups]
+# Kept out of [project.dependencies] deliberately: dagster-dbt releases
+# track the exact dagster patch they were built against 1:1 (0.29.15 <->
+# dagster 1.13.15, 0.28.22 <-> 1.12.22, ...), and even the dbt-core range
+# each one pulls in shifts between patches (verified: 0.28.0 requires
+# dbt-core<1.11, 0.28.22 requires dbt-core<1.12). Bundling that into the
+# base dependencies would mean every Dagster version investigated for
+# issue #67 also needs its own matching dagster-dbt/dbt-core resolution
+# before it can even be installed. `uv sync` (no flags) skips this group,
+# so the base dagster/dagster-webserver stack -- what #67 actually needs
+# to test GraphQL compatibility -- stays decoupled from it. Actually
+# running the jaffle_shop dev fixture needs `uv sync --group dbt`.
+dbt = [
     "dagster-dbt==0.29.15",
     "dbt-duckdb>=1.11,<1.12",
 ]

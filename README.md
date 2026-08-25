@@ -281,7 +281,7 @@ To see `dagster_code_location_load_error` actually report `1` (rather than trust
 ```sh
 # Stop the compose-managed dagster container first if it's running, then:
 docker compose run --rm --service-ports --name dagster-prometheus-exporter-dagster-1 dagster \
-  uv run dagster dev -w /app/dev/workspace.yaml -h 0.0.0.0 -p 3000
+  uv run --group dbt dagster dev -w /app/dev/workspace.yaml -h 0.0.0.0 -p 3000
 ```
 
 Then point the exporter at it (either `DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql` on the host, or `http://dagster-prometheus-exporter-dagster-1:3000/graphql` from another container on the same compose network) and check `/metrics` for:
