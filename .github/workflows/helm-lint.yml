@@ -59,4 +59,5 @@ jobs:
         run: |
           helm template charts/dagster-prometheus-exporter \
             --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql \
-            --set serviceMonitor.enabled=true
+            --set serviceMonitor.enabled=true \
+            --set alerts.enabled=true

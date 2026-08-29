@@ -47,3 +47,41 @@ serviceMonitor:
   enabled: false
   interval: 30s
   additionalLabels: {}
+
+# For prometheus-operator setups. Requires the PrometheusRule CRD to already
+# be installed in the cluster (same prerequisite as serviceMonitor above).
+# Off by default so installing the chart never surfaces alerts nobody asked
+# for. The rules themselves are the best-practice set from
+# https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112;
+# thresholds mirror what docs/metrics.md already recommends per metric.
+#
+# The alert annotations (see templates/prometheusrule.yaml) describe these
+# defaults in plain English (e.g. "over 2 minutes"). Overriding a threshold
+# or `for` below changes alerting behavior but not that wording -- keep them
+# in sync by hand if you override one.
+alerts:
+  enabled: false
+  additionalLabels: {}
+  rules:
+    # dagster_daemon_healthy can stay 1 for up to 30 minutes after a daemon
+    # actually died (Dagster's own heartbeat tolerance) -- alerting on
+    # heartbeat staleness instead catches it far sooner.
+    daemonHeartbeatStale:
+      thresholdSeconds: 120
+      for: 2m
+    jobLastRunFailed:
+      for: 5m
+    runStuckInQueue:
+      thresholdSeconds: 600
+      for: 5m
+    scheduleNotSucceeding:
+      for: 15m
+    sensorTickFailing:
+      for: 15m
+    sensorTickStale:
+      thresholdSeconds: 300
+      for: 5m
+    codeLocationLoadError:
+      for: 10m
+    exporterScrapeFailing:
+      for: 10m

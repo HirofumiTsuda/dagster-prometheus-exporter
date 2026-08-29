@@ -36,7 +36,14 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `podAnnotations` / `podLabels` | `{}` | Extra pod metadata. |
 | `serviceMonitor.enabled` | `false` | Create a prometheus-operator `ServiceMonitor`. Requires the CRD to already be installed. |
 | `serviceMonitor.interval` | `30s` | Scrape interval for the `ServiceMonitor`. |
+| `alerts.enabled` | `false` | Create a prometheus-operator `PrometheusRule` with a best-practice set of alerts (see below). Requires the CRD to already be installed. |
+| `alerts.additionalLabels` | `{}` | Extra labels on the `PrometheusRule`, e.g. for a Prometheus `ruleSelector`. |
+| `alerts.rules.*.for` / `alerts.rules.*.thresholdSeconds` | see `values.yaml` | Per-alert `for` duration and, where the alert compares against a number, its threshold. Overriding these changes alerting behavior but not the annotation text, which is written for the defaults. |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart's computed resource name. |
+
+### Alerts (`alerts.enabled`)
+
+Off by default. When enabled, ships eight alerts covering daemon liveness, job/schedule/sensor health, queue backlogs, code location load errors, and the exporter's own scrape health — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112). See [templates/prometheusrule.yaml](templates/prometheusrule.yaml) for the exact rules and [docs/metrics.md](../../docs/metrics.md) for the reasoning behind each threshold.
 
 ## Notes
 
