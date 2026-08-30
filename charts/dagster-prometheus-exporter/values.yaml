@@ -55,10 +55,14 @@ serviceMonitor:
 # https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112;
 # thresholds mirror what docs/metrics.md already recommends per metric.
 #
+# Each rule can be turned off individually (`enabled: false`) without
+# disabling the others, so e.g. a noisy alert can be dropped while keeping
+# the rest -- see https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112.
+#
 # The alert annotations (see templates/prometheusrule.yaml) describe these
-# defaults in plain English (e.g. "over 2 minutes"). Overriding a threshold
-# or `for` below changes alerting behavior but not that wording -- keep them
-# in sync by hand if you override one.
+# defaults in plain English (e.g. "over 2 minutes"). Overriding a threshold,
+# `for`, or `severity` below changes alerting behavior but not that wording
+# -- keep them in sync by hand if you override one.
 alerts:
   enabled: false
   additionalLabels: {}
@@ -67,21 +71,41 @@ alerts:
     # actually died (Dagster's own heartbeat tolerance) -- alerting on
     # heartbeat staleness instead catches it far sooner.
     daemonHeartbeatStale:
+      enabled: true
       thresholdSeconds: 120
       for: 2m
+      severity: critical
     jobLastRunFailed:
+      enabled: true
       for: 5m
+      severity: warning
     runStuckInQueue:
+      enabled: true
       thresholdSeconds: 600
       for: 5m
+      severity: warning
     scheduleNotSucceeding:
+      enabled: true
       for: 15m
+      severity: warning
     sensorTickFailing:
+      enabled: true
       for: 15m
+      severity: warning
     sensorTickStale:
+      enabled: true
       thresholdSeconds: 300
       for: 5m
+      severity: warning
     codeLocationLoadError:
+      enabled: true
       for: 10m
+      severity: warning
     exporterScrapeFailing:
+      enabled: true
       for: 10m
+      severity: warning
+  # Extra PrometheusRule rules to append verbatim (alert/expr/for/labels/
+  # annotations), for alerts this chart can't know about in advance -- e.g.
+  # ones specific to your own jobs or schedules.
+  additionalRules: []
