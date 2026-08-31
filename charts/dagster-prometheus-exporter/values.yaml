@@ -41,6 +41,10 @@ resources: {}
 podAnnotations: {}
 podLabels: {}
 
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
 # For prometheus-operator setups. Requires the ServiceMonitor CRD to already
 # be installed in the cluster.
 serviceMonitor:

@@ -34,8 +34,12 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `env` | `{}` | Environment variables passed to the exporter via a ConfigMap (`envFrom`). Keys match `internal/config/config.go` exactly. |
 | `resources` | `{}` | Standard pod resource requests/limits. |
 | `podAnnotations` / `podLabels` | `{}` | Extra pod metadata. |
+| `nodeSelector` | `{}` | Node labels the pod must match to be scheduled. |
+| `tolerations` | `[]` | Taints the pod tolerates — e.g. for a dedicated monitoring node pool. |
+| `affinity` | `{}` | Node/pod affinity and anti-affinity rules. |
 | `serviceMonitor.enabled` | `false` | Create a prometheus-operator `ServiceMonitor`. Requires the CRD to already be installed. |
 | `serviceMonitor.interval` | `30s` | Scrape interval for the `ServiceMonitor`. |
+| `serviceMonitor.additionalLabels` | `{}` | Extra labels on the `ServiceMonitor`, for matching a Prometheus instance's `serviceMonitorSelector`. |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart's computed resource name. |
 
 ## Notes

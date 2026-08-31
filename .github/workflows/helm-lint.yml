@@ -59,4 +59,7 @@ jobs:
         run: |
           helm template charts/dagster-prometheus-exporter \
             --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql \
-            --set serviceMonitor.enabled=true
+            --set serviceMonitor.enabled=true \
+            --set nodeSelector."kubernetes\.io/os"=linux \
+            --set-json 'tolerations=[{"key":"dedicated","operator":"Equal","value":"monitoring","effect":"NoSchedule"}]' \
+            --set-json 'affinity={"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"kubernetes.io/arch","operator":"In","values":["amd64"]}]}]}}}'
