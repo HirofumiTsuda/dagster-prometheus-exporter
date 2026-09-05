@@ -107,6 +107,13 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 	// "this key has never been seen." There's no upfront list of
 	// configured concurrency keys to seed from (unlike knownJobs), so
 	// "every key ever observed" is the best available substitute.
+	//
+	// This assumes the key set stays small and bounded -- nothing ever
+	// expires an entry, so a high-cardinality key (applyLimitPerUniqueValue
+	// against a tenant/customer/date-like tag) would grow this map, and the
+	// metric's series count, without bound for the life of the process.
+	// See docs/metrics.md and
+	// https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/81.
 	for key := range c.concurrencyKeyBacklog {
 		if _, ok := backlog[key]; !ok {
 			backlog[key] = 0

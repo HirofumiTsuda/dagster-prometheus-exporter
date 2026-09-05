@@ -99,6 +99,8 @@ Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would a
 
 A concurrency key is zero-filled (not dropped) once its backlog clears, for the same reason as `dagster_active_runs`: a missing series and a `0` mean different things.
 
+This assumes the set of concurrency keys is bounded and small, since a key is zero-filled forever once observed — there's no roster query to prune against (unlike jobs), and nothing currently expires one. That holds for the common case of `tag_concurrency_limits` naming a handful of fixed tag values (e.g. specific `team` or `warehouse` values). It does **not** hold for a limit declared with `applyLimitPerUniqueValue: true` against a high-cardinality tag (a tenant id, a customer id, a date) — every distinct value seen becomes a permanent series until the exporter restarts. See [#81](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/81) if that's your setup.
+
 ## `dagster_schedule_status` (Gauge)
 
 Labels: `schedule_name`, `location`, `status`
