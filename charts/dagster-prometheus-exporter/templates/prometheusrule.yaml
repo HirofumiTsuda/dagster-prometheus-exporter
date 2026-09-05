@@ -12,106 +12,15 @@ spec:
   groups:
     - name: dagster-prometheus-exporter
       rules:
-        {{- if .Values.alerts.rules.daemonHeartbeatStale.enabled }}
-        - alert: DagsterDaemonHeartbeatStale
-          # dagster_daemon_healthy can stay 1 for up to 30 minutes after a
-          # daemon actually died (Dagster's own heartbeat tolerance -- see
-          # docs/metrics.md) -- alerting on heartbeat staleness instead
-          # catches it in roughly the threshold below rather than up to 30
-          # minutes later.
-          expr: time() - dagster_daemon_last_heartbeat_timestamp_seconds > {{ .Values.alerts.rules.daemonHeartbeatStale.thresholdSeconds }}
-          for: {{ .Values.alerts.rules.daemonHeartbeatStale.for }}
+        {{- range $name, $rule := .Values.alerts.rules }}
+        {{- if $rule.enabled }}
+        - alert: {{ $rule.alert }}
+          expr: {{ $rule.expr | quote }}
+          for: {{ $rule.for }}
           labels:
-            severity: {{ .Values.alerts.rules.daemonHeartbeatStale.severity }}
+            {{- toYaml $rule.labels | nindent 12 }}
           annotations:
-            summary: {{ `Dagster daemon {{ $labels.daemon_type }} heartbeat is stale` | quote }}
-            description: {{ `The {{ $labels.daemon_type }} daemon hasn't reported a heartbeat in over 2 minutes ({{ $value | humanizeDuration }} since the last one). Schedules, sensors, and queued runs may be stalled.` | quote }}
+            {{- toYaml $rule.annotations | nindent 12 }}
         {{- end }}
-
-        {{- if .Values.alerts.rules.jobLastRunFailed.enabled }}
-        - alert: DagsterJobLastRunFailed
-          expr: dagster_last_run_info{status="failure"} == 1
-          for: {{ .Values.alerts.rules.jobLastRunFailed.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.jobLastRunFailed.severity }}
-          annotations:
-            summary: {{ `Dagster job {{ $labels.job_name }} last run failed` | quote }}
-            description: {{ `The most recent completed run of job {{ $labels.job_name }} in code location {{ $labels.location }} failed.` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.runStuckInQueue.enabled }}
-        - alert: DagsterRunStuckInQueue
-          expr: dagster_active_run_duration_seconds{status="queued"} > {{ .Values.alerts.rules.runStuckInQueue.thresholdSeconds }}
-          for: {{ .Values.alerts.rules.runStuckInQueue.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.runStuckInQueue.severity }}
-          annotations:
-            summary: {{ `Dagster job {{ $labels.job_name }} has a run stuck in the queue` | quote }}
-            description: {{ `Job {{ $labels.job_name }} in code location {{ $labels.location }} has had a run sitting queued for {{ $value | humanizeDuration }}.` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.scheduleNotSucceeding.enabled }}
-        - alert: DagsterScheduleNotSucceeding
-          expr: |
-            dagster_schedule_status{status="running"} == 1
-            and on (schedule_name, location)
-            dagster_schedule_last_tick_status{status!="success"} == 1
-          for: {{ .Values.alerts.rules.scheduleNotSucceeding.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.scheduleNotSucceeding.severity }}
-          annotations:
-            summary: {{ `Dagster schedule {{ $labels.schedule_name }} isn't succeeding` | quote }}
-            description: {{ `Schedule {{ $labels.schedule_name }} in code location {{ $labels.location }} is turned on but its most recent tick did not succeed.` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.sensorTickFailing.enabled }}
-        - alert: DagsterSensorTickFailing
-          expr: |
-            dagster_sensor_status{status="running"} == 1
-            and on (sensor_name, location)
-            dagster_sensor_last_tick_status{status="failure"} == 1
-          for: {{ .Values.alerts.rules.sensorTickFailing.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.sensorTickFailing.severity }}
-          annotations:
-            summary: {{ `Dagster sensor {{ $labels.sensor_name }} is failing` | quote }}
-            description: {{ `Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} is turned on and its most recent tick raised an error (this excludes the common "skipped" outcome).` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.sensorTickStale.enabled }}
-        - alert: DagsterSensorTickStale
-          expr: time() - dagster_sensor_last_tick_timestamp_seconds > {{ .Values.alerts.rules.sensorTickStale.thresholdSeconds }}
-          for: {{ .Values.alerts.rules.sensorTickStale.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.sensorTickStale.severity }}
-          annotations:
-            summary: {{ `Dagster sensor {{ $labels.sensor_name }} stopped ticking` | quote }}
-            description: {{ `Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} hasn't ticked in {{ $value | humanizeDuration }}, suggesting a stalled evaluation loop.` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.codeLocationLoadError.enabled }}
-        - alert: DagsterCodeLocationLoadError
-          expr: dagster_code_location_load_error == 1
-          for: {{ .Values.alerts.rules.codeLocationLoadError.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.codeLocationLoadError.severity }}
-          annotations:
-            summary: {{ `Dagster code location {{ $labels.location }} failed to load` | quote }}
-            description: {{ `Code location {{ $labels.location }} has been failing to load for over 10 minutes -- jobs, schedules, and sensors defined there can't run. Check the webserver/daemon logs for the load error.` | quote }}
-        {{- end }}
-
-        {{- if .Values.alerts.rules.exporterScrapeFailing.enabled }}
-        - alert: DagsterExporterScrapeFailing
-          expr: dagster_exporter_last_scrape_success == 0
-          for: {{ .Values.alerts.rules.exporterScrapeFailing.for }}
-          labels:
-            severity: {{ .Values.alerts.rules.exporterScrapeFailing.severity }}
-          annotations:
-            summary: {{ `dagster-prometheus-exporter collector {{ $labels.collector }} is failing` | quote }}
-            description: {{ `The {{ $labels.collector }} collector has been failing to scrape Dagster's GraphQL API for over 10 minutes -- other Dagster alerts may be based on stale data until this recovers.` | quote }}
-        {{- end }}
-
-        {{- with .Values.alerts.additionalRules }}
-        {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}

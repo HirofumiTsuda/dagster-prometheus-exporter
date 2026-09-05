@@ -60,4 +60,6 @@ jobs:
           helm template charts/dagster-prometheus-exporter \
             --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql \
             --set serviceMonitor.enabled=true \
-            --set alerts.enabled=true
+            --set alerts.enabled=true \
+            --set alerts.rules.sensorTickStale.for=10m \
+            --set alerts.rules.daemonHeartbeatStale.enabled=false
