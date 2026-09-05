@@ -1,0 +1,26 @@
+{{- if .Values.alerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "dagster-prometheus-exporter.fullname" . }}
+  labels:
+    {{- include "dagster-prometheus-exporter.labels" . | nindent 4 }}
+    {{- with .Values.alerts.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: dagster-prometheus-exporter
+      rules:
+        {{- range $name, $rule := .Values.alerts.rules }}
+        {{- if $rule.enabled }}
+        - alert: {{ $rule.alert }}
+          expr: {{ $rule.expr | quote }}
+          for: {{ $rule.for }}
+          labels:
+            {{- toYaml $rule.labels | nindent 12 }}
+          annotations:
+            {{- toYaml $rule.annotations | nindent 12 }}
+        {{- end }}
+        {{- end }}
+{{- end }}

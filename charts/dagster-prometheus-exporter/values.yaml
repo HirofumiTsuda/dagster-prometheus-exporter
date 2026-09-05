@@ -51,3 +51,119 @@ serviceMonitor:
   enabled: false
   interval: 30s
   additionalLabels: {}
+
+# For prometheus-operator setups. Requires the PrometheusRule CRD to already
+# be installed in the cluster (same prerequisite as serviceMonitor above).
+# Off by default so installing the chart never surfaces alerts nobody asked
+# for. The rules themselves are the best-practice set from
+# https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112;
+# thresholds mirror what docs/metrics.md already recommends per metric.
+#
+# Each entry under `rules` is a complete Prometheus alerting rule
+# (alert/expr/for/labels/annotations), keyed by name. Helm deep-merges
+# values maps, so overriding just needs the fields you're changing -- e.g.
+# `--set alerts.rules.runStuckInQueue.enabled=false` drops one alert while
+# keeping the rest, and a values file can replace just `expr` on a built-in
+# rule (say, to exclude a noisy sensor_name or change a threshold) without
+# repeating the rest of it. To add an alert this chart doesn't know about,
+# add a new key with the full rule spec -- no separate mechanism needed.
+# See https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112
+# and https://github.com/HirofumiTsuda/dagster-prometheus-exporter/pull/113
+# for the design discussion behind this shape.
+#
+# The annotations below describe each default in plain English (e.g. "over
+# 2 minutes"). Overriding `expr` or `for` changes alerting behavior but not
+# that wording -- keep them in sync by hand if you override one.
+alerts:
+  enabled: false
+  additionalLabels: {}
+  rules:
+    daemonHeartbeatStale:
+      enabled: true
+      alert: DagsterDaemonHeartbeatStale
+      # dagster_daemon_healthy can stay 1 for up to 30 minutes after a
+      # daemon actually died (Dagster's own heartbeat tolerance) --
+      # alerting on heartbeat staleness instead catches it far sooner.
+      expr: time() - dagster_daemon_last_heartbeat_timestamp_seconds > 120
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Dagster daemon {{ $labels.daemon_type }} heartbeat is stale"
+        description: "The {{ $labels.daemon_type }} daemon hasn't reported a heartbeat in over 2 minutes ({{ $value | humanizeDuration }} since the last one). Schedules, sensors, and queued runs may be stalled."
+    jobLastRunFailed:
+      enabled: true
+      alert: DagsterJobLastRunFailed
+      expr: dagster_last_run_info{status="failure"} == 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster job {{ $labels.job_name }} last run failed"
+        description: "The most recent completed run of job {{ $labels.job_name }} in code location {{ $labels.location }} failed."
+    runStuckInQueue:
+      enabled: true
+      alert: DagsterRunStuckInQueue
+      expr: dagster_active_run_duration_seconds{status="queued"} > 600
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster job {{ $labels.job_name }} has a run stuck in the queue"
+        description: "Job {{ $labels.job_name }} in code location {{ $labels.location }} has had a run sitting queued for {{ $value | humanizeDuration }}."
+    scheduleNotSucceeding:
+      enabled: true
+      alert: DagsterScheduleNotSucceeding
+      expr: |-
+        dagster_schedule_status{status="running"} == 1
+        and on (schedule_name, location)
+        dagster_schedule_last_tick_status{status!="success"} == 1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster schedule {{ $labels.schedule_name }} isn't succeeding"
+        description: "Schedule {{ $labels.schedule_name }} in code location {{ $labels.location }} is turned on but its most recent tick did not succeed."
+    sensorTickFailing:
+      enabled: true
+      alert: DagsterSensorTickFailing
+      expr: |-
+        dagster_sensor_status{status="running"} == 1
+        and on (sensor_name, location)
+        dagster_sensor_last_tick_status{status="failure"} == 1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster sensor {{ $labels.sensor_name }} is failing"
+        description: "Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} is turned on and its most recent tick raised an error (this excludes the common \"skipped\" outcome)."
+    sensorTickStale:
+      enabled: true
+      alert: DagsterSensorTickStale
+      expr: time() - dagster_sensor_last_tick_timestamp_seconds > 300
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster sensor {{ $labels.sensor_name }} stopped ticking"
+        description: "Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} hasn't ticked in {{ $value | humanizeDuration }}, suggesting a stalled evaluation loop."
+    codeLocationLoadError:
+      enabled: true
+      alert: DagsterCodeLocationLoadError
+      expr: dagster_code_location_load_error == 1
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster code location {{ $labels.location }} failed to load"
+        description: "Code location {{ $labels.location }} has been failing to load for over 10 minutes -- jobs, schedules, and sensors defined there can't run. Check the webserver/daemon logs for the load error."
+    exporterScrapeFailing:
+      enabled: true
+      alert: DagsterExporterScrapeFailing
+      expr: dagster_exporter_last_scrape_success == 0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "dagster-prometheus-exporter collector {{ $labels.collector }} is failing"
+        description: "The {{ $labels.collector }} collector has been failing to scrape Dagster's GraphQL API for over 10 minutes -- other Dagster alerts may be based on stale data until this recovers."

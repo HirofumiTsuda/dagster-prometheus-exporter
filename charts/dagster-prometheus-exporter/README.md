@@ -40,7 +40,36 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `serviceMonitor.enabled` | `false` | Create a prometheus-operator `ServiceMonitor`. Requires the CRD to already be installed. |
 | `serviceMonitor.interval` | `30s` | Scrape interval for the `ServiceMonitor`. |
 | `serviceMonitor.additionalLabels` | `{}` | Extra labels on the `ServiceMonitor`, for matching a Prometheus instance's `serviceMonitorSelector`. |
+| `alerts.enabled` | `false` | Create a prometheus-operator `PrometheusRule` with a best-practice set of alerts (see below). Requires the CRD to already be installed. |
+| `alerts.additionalLabels` | `{}` | Extra labels on the `PrometheusRule` object itself, e.g. for a Prometheus `ruleSelector`. |
+| `alerts.rules.<name>` | see `values.yaml` | A complete Prometheus alerting rule (`enabled`/`alert`/`expr`/`for`/`labels`/`annotations`), keyed by name. See below for overriding or adding one. |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart's computed resource name. |
+
+### Alerts (`alerts.enabled`)
+
+Off by default. When enabled, ships eight alerts covering daemon liveness, job/schedule/sensor health, queue backlogs, code location load errors, and the exporter's own scrape health — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112). See [values.yaml](values.yaml) for the exact rules and [docs/metrics.md](../../docs/metrics.md) for the reasoning behind each threshold.
+
+Each entry under `alerts.rules` is a complete rule (`alert`/`expr`/`for`/`labels`/`annotations`), so a values file only needs to set the fields it's changing — Helm deep-merges maps, and the rest of a built-in rule's defaults pass through untouched. That covers disabling one, tightening or loosening a threshold, or replacing `expr` entirely (e.g. to exclude a specific job/sensor by label). Adding an alert this chart doesn't know about is the same operation: give it a new key with the full rule spec:
+
+```yaml
+alerts:
+  enabled: true
+  rules:
+    runStuckInQueue:
+      enabled: false # too noisy for our queue depth, handled elsewhere
+    sensorTickStale:
+      # exclude one hourly sensor from the default 5-minute staleness check
+      expr: time() - dagster_sensor_last_tick_timestamp_seconds{sensor_name!="my_hourly_sensor"} > 300
+    myJobNeverRan:
+      enabled: true
+      alert: MyJobNeverRan
+      expr: absent(dagster_last_run_info{job_name="my_job"})
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: my_job has never reported a run
+```
 
 ## Notes
 

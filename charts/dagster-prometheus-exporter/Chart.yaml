@@ -2,7 +2,7 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.5
+version: 0.1.6
 # Must exactly match a real tag on ghcr.io/hirofumitsuda/dagster-prometheus-exporter
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
