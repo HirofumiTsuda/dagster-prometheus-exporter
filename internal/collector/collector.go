@@ -12,26 +12,27 @@ import (
 type DagsterCollector struct {
 	dagsterGraphQLEndpoint string
 
-	activeRunsDesc                     *prometheus.Desc
-	completedRunsCounter               *prometheus.CounterVec
-	lastRunStatusDesc                  *prometheus.Desc
-	scrapeDurationDesc                 *prometheus.Desc
-	lastScrapeSuccessDesc              *prometheus.Desc
-	scrapeErrorsCounter                *prometheus.CounterVec
-	codeLocationLoadErrorDesc          *prometheus.Desc
-	lastRunDurationDesc                *prometheus.Desc
-	activeRunDurationDesc              *prometheus.Desc
-	concurrencyKeyBacklogDesc          *prometheus.Desc
-	scheduleStatusDesc                 *prometheus.Desc
-	scheduleTickStatusDesc             *prometheus.Desc
-	scheduleTickTimestampDesc          *prometheus.Desc
-	sensorStatusDesc                   *prometheus.Desc
-	sensorTickStatusDesc               *prometheus.Desc
-	sensorTickTimestampDesc            *prometheus.Desc
-	daemonHealthyDesc                  *prometheus.Desc
-	daemonLastHeartbeatDesc            *prometheus.Desc
-	assetStaleStatusDesc               *prometheus.Desc
-	assetLastMaterializationStatusDesc *prometheus.Desc
+	activeRunsDesc                        *prometheus.Desc
+	completedRunsCounter                  *prometheus.CounterVec
+	lastRunStatusDesc                     *prometheus.Desc
+	scrapeDurationDesc                    *prometheus.Desc
+	lastScrapeSuccessDesc                 *prometheus.Desc
+	scrapeErrorsCounter                   *prometheus.CounterVec
+	codeLocationLoadErrorDesc             *prometheus.Desc
+	lastRunDurationDesc                   *prometheus.Desc
+	activeRunDurationDesc                 *prometheus.Desc
+	concurrencyKeyBacklogDesc             *prometheus.Desc
+	scheduleStatusDesc                    *prometheus.Desc
+	scheduleTickStatusDesc                *prometheus.Desc
+	scheduleTickTimestampDesc             *prometheus.Desc
+	sensorStatusDesc                      *prometheus.Desc
+	sensorTickStatusDesc                  *prometheus.Desc
+	sensorTickTimestampDesc               *prometheus.Desc
+	daemonHealthyDesc                     *prometheus.Desc
+	daemonLastHeartbeatDesc               *prometheus.Desc
+	assetStaleStatusDesc                  *prometheus.Desc
+	assetLastMaterializationStatusDesc    *prometheus.Desc
+	assetLastMaterializationTimestampDesc *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
@@ -204,6 +205,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"asset_key", "status"},
 			nil,
 		),
+		assetLastMaterializationTimestampDesc: prometheus.NewDesc(
+			"dagster_asset_last_materialization_timestamp_seconds",
+			"Unix timestamp (endTime) of an asset's most recent materializing run, regardless of whether it succeeded. Absent for an asset that has never had a run -- the same run this comes from also drives the last-materialization status metric. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"asset_key"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -233,6 +240,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.daemonLastHeartbeatDesc
 	ch <- c.assetStaleStatusDesc
 	ch <- c.assetLastMaterializationStatusDesc
+	ch <- c.assetLastMaterializationTimestampDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }

@@ -163,6 +163,16 @@ Always `1`; status of an asset's most recently launched materializing run (`asse
 
 This exists because `dagster_asset_stale_status` can't answer "did the last run succeed": `assetMaterializations` (and the `staleStatus` derived from it) only records successful events, so a failing asset and one that has simply never run both look `missing` there. This metric reads the run itself instead, so a failed run is visible even though it left the asset's materialization history untouched.
 
+## `dagster_asset_last_materialization_timestamp_seconds` (Gauge)
+
+Labels: `asset_key`
+
+Unix timestamp (`assetsLatestInfo.latestRun.endTime`) of an asset's most recent materializing run, regardless of whether it succeeded. Exported as a timestamp rather than an age so staleness is computed at query time (`time() - metric`) instead of being frozen at scrape time — the same reasoning as `dagster_daemon_last_heartbeat_timestamp_seconds` and the schedule/sensor tick timestamps. Tracks the same run as `dagster_asset_last_materialization_status` (same lifetime), so an asset that has never had a run has no series for either.
+
+This exists because `dagster_asset_stale_status` only detects staleness *relative to an upstream* (a `code_version` comparison, not elapsed time) — a leaf/source asset with no upstream dependency reports `fresh` forever once materialized once, even if it hasn't actually run again in months. This metric is what makes "this asset hasn't been materialized recently" alertable on its own, the same gap [#84](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/84) closed for schedules and sensors.
+
+`endTime`, not `updateTime`, to match the existing convention: `dagster_last_run_duration_seconds` already uses `endTime - creationTime` for completed jobs, so this stays consistent with how "when did this run finish" is computed elsewhere in the codebase.
+
 ## Exporter self-health
 
 These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, or `asset_status` (the six concurrent collectors described in [docs/architecture.md](architecture.md)).

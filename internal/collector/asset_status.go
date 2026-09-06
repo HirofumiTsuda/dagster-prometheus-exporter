@@ -17,6 +17,11 @@ type assetStatusEntry struct {
 	// lastMaterializationStatus is "" when the asset has never had a run —
 	// no dagster_asset_last_materialization_status series is emitted for it.
 	lastMaterializationStatus string
+	// lastMaterializationTimestamp is only meaningful when
+	// lastMaterializationStatus is set -- both come from the same non-nil
+	// LatestRun, so reflectAssetStatus gates emitting it on that field
+	// rather than a dedicated has-value flag.
+	lastMaterializationTimestamp float64
 }
 
 // CollectAssetStatus reports each asset's staleness and the outcome of its
@@ -73,6 +78,7 @@ func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 			key := assetKeyLabel(info.AssetKey.Path)
 			entry := entries[key]
 			entry.lastMaterializationStatus = info.LatestRun.Status
+			entry.lastMaterializationTimestamp = info.LatestRun.EndTime
 			entries[key] = entry
 		}
 	}
@@ -93,10 +99,11 @@ func assetKeyLabel(path AssetKeyPath) string {
 	return strings.Join(path, "/")
 }
 
-// reflectAssetStatus emits dagster_asset_stale_status and
-// dagster_asset_last_materialization_status from a single locked pass over
-// c.assetStatus, the same reasoning as reflectDaemonHealth: both come from
-// one entry per asset.
+// reflectAssetStatus emits dagster_asset_stale_status,
+// dagster_asset_last_materialization_status, and
+// dagster_asset_last_materialization_timestamp_seconds from a single locked
+// pass over c.assetStatus, the same reasoning as reflectDaemonHealth: all
+// three come from one entry per asset.
 func reflectAssetStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -119,6 +126,12 @@ func reflectAssetStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 				1,
 				assetKey,
 				strings.ToLower(entry.lastMaterializationStatus),
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.assetLastMaterializationTimestampDesc,
+				prometheus.GaugeValue,
+				entry.lastMaterializationTimestamp,
+				assetKey,
 			)
 		}
 	}
