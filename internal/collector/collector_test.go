@@ -11,7 +11,7 @@ import (
 func TestDagsterCollectorDescribeAndCollect(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
 
-	descCh := make(chan *prometheus.Desc, 16)
+	descCh := make(chan *prometheus.Desc, 32)
 	go func() {
 		c.Describe(descCh)
 		close(descCh)
@@ -26,9 +26,10 @@ func TestDagsterCollectorDescribeAndCollect(t *testing.T) {
 	// scheduleTickTimestampDesc, sensorStatusDesc, sensorTickStatusDesc,
 	// sensorTickTimestampDesc, daemonHealthyDesc, daemonLastHeartbeatDesc,
 	// assetStaleStatusDesc, assetLastMaterializationStatusDesc,
+	// assetLastMaterializationTimestampDesc,
 	// plus one each from completedRunsCounter and
 	// scrapeErrorsCounter.
-	assert.Equal(t, 20, descCount)
+	assert.Equal(t, 21, descCount)
 
 	c.RecordScrapeResult("active_runs", 10*time.Millisecond, nil)
 

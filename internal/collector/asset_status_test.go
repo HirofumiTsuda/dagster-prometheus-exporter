@@ -61,8 +61,8 @@ func TestCollectAssetStatusDistinguishesNeverRunFromFailed(t *testing.T) {
 	latestInfoBody := `{
 		"data": {
 			"assetsLatestInfo": [
-				{"assetKey": {"path": ["good_asset"]}, "latestRun": {"status": "SUCCESS"}},
-				{"assetKey": {"path": ["bad_asset"]}, "latestRun": {"status": "FAILURE"}},
+				{"assetKey": {"path": ["good_asset"]}, "latestRun": {"status": "SUCCESS", "endTime": 1700000100}},
+				{"assetKey": {"path": ["bad_asset"]}, "latestRun": {"status": "FAILURE", "endTime": 1700000200}},
 				{"assetKey": {"path": ["never_run_asset"]}, "latestRun": null}
 			]
 		}
@@ -73,8 +73,8 @@ func TestCollectAssetStatusDistinguishesNeverRunFromFailed(t *testing.T) {
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 
 	require.Len(t, c.assetStatus, 3)
-	assert.Equal(t, assetStatusEntry{staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS"}, c.assetStatus["good_asset"])
-	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: "FAILURE"}, c.assetStatus["bad_asset"],
+	assert.Equal(t, assetStatusEntry{staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100}, c.assetStatus["good_asset"])
+	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: "FAILURE", lastMaterializationTimestamp: 1700000200}, c.assetStatus["bad_asset"],
 		"a failed run must be distinguishable from an asset that has never run, even though both look MISSING via staleStatus alone")
 	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: ""}, c.assetStatus["never_run_asset"])
 }
@@ -178,11 +178,11 @@ func TestCollectAssetStatusReturnsErrorOnGraphQLError(t *testing.T) {
 func TestReflectAssetStatus(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), "http://unused", time.Hour, time.Hour, 500, 5*time.Minute)
 	c.assetStatus = map[string]assetStatusEntry{
-		"good_asset":      {staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS"},
+		"good_asset":      {staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100},
 		"never_run_asset": {staleStatus: "MISSING", lastMaterializationStatus: ""},
 	}
 
-	ch := make(chan prometheus.Metric, 8)
+	ch := make(chan prometheus.Metric, 16)
 	go func() {
 		reflectAssetStatus(c, ch)
 		close(ch)
@@ -205,6 +205,8 @@ func TestReflectAssetStatus(t *testing.T) {
 			metricName = "dagster_asset_stale_status"
 		case strings.Contains(desc, "dagster_asset_last_materialization_status"):
 			metricName = "dagster_asset_last_materialization_status"
+		case strings.Contains(desc, "dagster_asset_last_materialization_timestamp_seconds"):
+			metricName = "dagster_asset_last_materialization_timestamp_seconds"
 		default:
 			t.Fatalf("unexpected metric desc: %s", desc)
 		}
@@ -223,7 +225,8 @@ func TestReflectAssetStatus(t *testing.T) {
 
 	assert.Equal(t, float64(1), seen[key{"dagster_asset_stale_status", "good_asset", "fresh"}])
 	assert.Equal(t, float64(1), seen[key{"dagster_asset_last_materialization_status", "good_asset", "success"}])
+	assert.Equal(t, float64(1700000100), seen[key{"dagster_asset_last_materialization_timestamp_seconds", "good_asset", ""}])
 	assert.Equal(t, float64(1), seen[key{"dagster_asset_stale_status", "never_run_asset", "missing"}])
-	assert.Len(t, seen, 3,
-		"never_run_asset must not emit a dagster_asset_last_materialization_status series: it has no run to report a status for")
+	assert.Len(t, seen, 4,
+		"never_run_asset must not emit dagster_asset_last_materialization_status or dagster_asset_last_materialization_timestamp_seconds: it has no run to report")
 }

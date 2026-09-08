@@ -938,6 +938,29 @@
         "x": 12,
         "y": 69
       }
+    },
+    {
+      "title": "Asset Materialization Age",
+      "description": "Seconds since each asset was last materialized, regardless of outcome. Unlike Asset Stale Status (a code_version comparison to an upstream), this catches a leaf/source asset that has simply gone quiet.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_asset_last_materialization_timestamp_seconds",
+          "legendFormat": "{{asset_key}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 77
+      }
     }
   ],
   "templating": {
