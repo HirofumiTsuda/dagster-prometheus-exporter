@@ -99,6 +99,8 @@ Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would a
 
 A concurrency key is zero-filled (not dropped) once its backlog clears, for the same reason as `dagster_active_runs`: a missing series and a `0` mean different things.
 
+This assumes the set of concurrency keys is bounded and small, since a key is zero-filled forever once observed — there's no roster query to prune against (unlike jobs), and nothing currently expires one. That holds for the common case of `tag_concurrency_limits` naming a handful of fixed tag values (e.g. specific `team` or `warehouse` values). It does **not** hold for a limit declared with `applyLimitPerUniqueValue: true` against a high-cardinality tag (a tenant id, a customer id, a date) — every distinct value seen becomes a permanent series until the exporter restarts. See [#81](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/81) if that's your setup.
+
 ## `dagster_schedule_status` (Gauge)
 
 Labels: `schedule_name`, `location`, `status`
@@ -160,6 +162,16 @@ Labels: `asset_key`, `status`
 Always `1`; status of an asset's most recently launched materializing run (`assetsLatestInfo.latestRun.status`, e.g. `success`, `failure`, `started`). No series at all for an asset that has never had a run.
 
 This exists because `dagster_asset_stale_status` can't answer "did the last run succeed": `assetMaterializations` (and the `staleStatus` derived from it) only records successful events, so a failing asset and one that has simply never run both look `missing` there. This metric reads the run itself instead, so a failed run is visible even though it left the asset's materialization history untouched.
+
+## `dagster_asset_last_materialization_timestamp_seconds` (Gauge)
+
+Labels: `asset_key`
+
+Unix timestamp (`assetsLatestInfo.latestRun.endTime`) of an asset's most recent materializing run, regardless of whether it succeeded. Exported as a timestamp rather than an age so staleness is computed at query time (`time() - metric`) instead of being frozen at scrape time — the same reasoning as `dagster_daemon_last_heartbeat_timestamp_seconds` and the schedule/sensor tick timestamps. Tracks the same run as `dagster_asset_last_materialization_status` (same lifetime), so an asset that has never had a run has no series for either.
+
+This exists because `dagster_asset_stale_status` only detects staleness *relative to an upstream* (a `code_version` comparison, not elapsed time) — a leaf/source asset with no upstream dependency reports `fresh` forever once materialized once, even if it hasn't actually run again in months. This metric is what makes "this asset hasn't been materialized recently" alertable on its own, the same gap [#84](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/84) closed for schedules and sensors.
+
+`endTime`, not `updateTime`, to match the existing convention: `dagster_last_run_duration_seconds` already uses `endTime - creationTime` for completed jobs, so this stays consistent with how "when did this run finish" is computed elsewhere in the codebase.
 
 ## Exporter self-health
 

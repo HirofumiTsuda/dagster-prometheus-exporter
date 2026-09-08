@@ -485,7 +485,8 @@ type GraphQLAssetsLatestInfoResponse struct {
 				Path AssetKeyPath `json:"path"`
 			} `json:"assetKey"`
 			LatestRun *struct {
-				Status string `json:"status"`
+				Status  string  `json:"status"`
+				EndTime float64 `json:"endTime"`
 			} `json:"latestRun"`
 		} `json:"assetsLatestInfo"`
 	} `json:"data"`

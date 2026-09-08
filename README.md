@@ -112,6 +112,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_sensor_last_tick_timestamp_seconds` | Gauge | When a sensor last ticked, so a stalled evaluation loop is detectable. |
 | `dagster_asset_stale_status` | Gauge | Whether an asset's data is missing, stale, or fresh. |
 | `dagster_asset_last_materialization_status` | Gauge | Outcome of an asset's most recently launched materializing run — the only one of the two that shows a failed run, since staleness alone can't tell "failed" from "never run". |
+| `dagster_asset_last_materialization_timestamp_seconds` | Gauge | When an asset was last materialized, regardless of outcome — catches a leaf asset that's gone quiet, since stale status alone can't (it's a `code_version` comparison, not elapsed time). |
 
 ### Exporter self-health
 
@@ -159,6 +160,9 @@ dagster_asset_stale_status{asset_key="bad_asset",status="missing"} 1
 
 dagster_asset_last_materialization_status{asset_key="good_asset",status="success"} 1
 dagster_asset_last_materialization_status{asset_key="bad_asset",status="failure"} 1
+
+dagster_asset_last_materialization_timestamp_seconds{asset_key="good_asset"} 1.788674981623458e+09
+dagster_asset_last_materialization_timestamp_seconds{asset_key="bad_asset"} 1.788674993059941e+09
 ```
 
 ### PromQL examples
@@ -251,7 +255,7 @@ Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.5 \
+  --version 0.1.6 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 

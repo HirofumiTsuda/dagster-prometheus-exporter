@@ -7,7 +7,7 @@ version: 0.1.6
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
 # templates/deployment.yaml defaults image.tag to this value.
-appVersion: "0.4.0"
+appVersion: "0.5.0"
 home: https://github.com/HirofumiTsuda/dagster-prometheus-exporter
 sources:
   - https://github.com/HirofumiTsuda/dagster-prometheus-exporter
