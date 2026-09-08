@@ -101,6 +101,16 @@ alerts:
       annotations:
         summary: "Dagster job {{ $labels.job_name }} last run failed"
         description: "The most recent completed run of job {{ $labels.job_name }} in code location {{ $labels.location }} failed."
+    assetMaterializationFailed:
+      enabled: true
+      alert: DagsterAssetMaterializationFailed
+      expr: dagster_asset_last_materialization_status{status="failure"} == 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster asset {{ $labels.asset_key }} failed to materialize"
+        description: "The most recent materializing run for asset {{ $labels.asset_key }} failed."
     runStuckInQueue:
       enabled: true
       alert: DagsterRunStuckInQueue
@@ -147,6 +157,23 @@ alerts:
       annotations:
         summary: "Dagster sensor {{ $labels.sensor_name }} stopped ticking"
         description: "Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} hasn't ticked in {{ $value | humanizeDuration }}, suggesting a stalled evaluation loop."
+    assetMaterializationStale:
+      # Off by default, unlike sensorTickStale above: sensors tick on one
+      # fixed interval, but assets in the same cluster can have wildly
+      # different materialization cadences (hourly/daily/weekly/ad hoc), so
+      # there's no single threshold that fits every installation the way
+      # 300s does for sensors. Set `expr`'s threshold (and enable) to match
+      # your own assets' cadence, e.g. per-asset via a label matcher like
+      # sensorTickStale's example below.
+      enabled: false
+      alert: DagsterAssetMaterializationStale
+      expr: time() - dagster_asset_last_materialization_timestamp_seconds > 86400
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster asset {{ $labels.asset_key }} hasn't been materialized recently"
+        description: "Asset {{ $labels.asset_key }} hasn't been materialized in over {{ $value | humanizeDuration }}."
     codeLocationLoadError:
       enabled: true
       alert: DagsterCodeLocationLoadError

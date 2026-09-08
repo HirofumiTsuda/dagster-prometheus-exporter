@@ -47,7 +47,9 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 
 ### Alerts (`alerts.enabled`)
 
-Off by default. When enabled, ships eight alerts covering daemon liveness, job/schedule/sensor health, queue backlogs, code location load errors, and the exporter's own scrape health — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112). See [values.yaml](values.yaml) for the exact rules and [docs/metrics.md](../../docs/metrics.md) for the reasoning behind each threshold.
+Off by default. When enabled, ships ten alerts covering daemon liveness, job/asset/schedule/sensor health, queue backlogs, code location load errors, and the exporter's own scrape health — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112), plus two asset alerts added afterward. See [values.yaml](values.yaml) for the exact rules and [docs/metrics.md](../../docs/metrics.md) for the reasoning behind each threshold.
+
+One of the ten, `assetMaterializationStale`, ships **disabled**: unlike sensors (one fixed tick interval), assets in the same cluster can materialize on wildly different cadences, so there's no single staleness threshold that fits every installation. Set `expr`'s threshold to match your own assets before enabling it.
 
 Each entry under `alerts.rules` is a complete rule (`alert`/`expr`/`for`/`labels`/`annotations`), so a values file only needs to set the fields it's changing — Helm deep-merges maps, and the rest of a built-in rule's defaults pass through untouched. That covers disabling one, tightening or loosening a threshold, or replacing `expr` entirely (e.g. to exclude a specific job/sensor by label). Adding an alert this chart doesn't know about is the same operation: give it a new key with the full rule spec:
 
