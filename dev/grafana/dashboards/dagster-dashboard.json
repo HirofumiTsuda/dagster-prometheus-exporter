@@ -961,6 +961,48 @@
         "x": 0,
         "y": 77
       }
+    },
+    {
+      "title": "Op Pool Concurrency",
+      "description": "Steps behind an op/step concurrency pool, by state: active (slot claimed, step running), assigned (slot reserved, not yet running), pending (waiting, not yet assigned). A different mechanism from Run Queue Backlog by Concurrency Key: this tracks individual steps sharing a pool across the whole instance, not whole runs queued behind a run-level tag.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_op_pool_concurrency_active_slots",
+          "legendFormat": "{{pool}} active"
+        },
+        {
+          "expr": "dagster_op_pool_concurrency_assigned_steps",
+          "legendFormat": "{{pool}} assigned"
+        },
+        {
+          "expr": "dagster_op_pool_concurrency_pending_steps",
+          "legendFormat": "{{pool}} pending"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      }
+    },
+    {
+      "title": "Op Pool Concurrency Limit",
+      "description": "Effective slot limit per pool. using_default_limit=true means the pool has no explicit override and is running on dagster.yaml's concurrency.pools.default_limit.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_op_pool_concurrency_limit",
+          "legendFormat": "{{pool}} (default={{using_default_limit}})"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 85
+      }
     }
   ],
   "templating": {

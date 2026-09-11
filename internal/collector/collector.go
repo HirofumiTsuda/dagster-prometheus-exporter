@@ -33,6 +33,10 @@ type DagsterCollector struct {
 	assetStaleStatusDesc                  *prometheus.Desc
 	assetLastMaterializationStatusDesc    *prometheus.Desc
 	assetLastMaterializationTimestampDesc *prometheus.Desc
+	opPoolActiveSlotsDesc                 *prometheus.Desc
+	opPoolAssignedStepsDesc               *prometheus.Desc
+	opPoolPendingStepsDesc                *prometheus.Desc
+	opPoolLimitDesc                       *prometheus.Desc
 
 	mutex                   sync.Mutex
 	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
@@ -52,6 +56,7 @@ type DagsterCollector struct {
 	codeLocationLoadError   map[string]bool
 	daemonHealth            map[string]daemonHealthEntry
 	assetStatus             map[string]assetStatusEntry
+	opPoolConcurrency       map[string]opPoolConcurrencyEntry
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -211,6 +216,30 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 			[]string{"asset_key"},
 			nil,
 		),
+		opPoolActiveSlotsDesc: prometheus.NewDesc(
+			"dagster_op_pool_concurrency_active_slots",
+			"Number of slots currently claimed (steps actively running) against an op/step concurrency pool, per pool",
+			[]string{"pool"},
+			nil,
+		),
+		opPoolAssignedStepsDesc: prometheus.NewDesc(
+			"dagster_op_pool_concurrency_assigned_steps",
+			"Number of steps assigned a slot against an op/step concurrency pool but not yet running, per pool",
+			[]string{"pool"},
+			nil,
+		),
+		opPoolPendingStepsDesc: prometheus.NewDesc(
+			"dagster_op_pool_concurrency_pending_steps",
+			"Number of steps waiting for a slot against an op/step concurrency pool, not yet assigned one, per pool",
+			[]string{"pool"},
+			nil,
+		),
+		opPoolLimitDesc: prometheus.NewDesc(
+			"dagster_op_pool_concurrency_limit",
+			"Effective concurrency limit (number of slots) configured for an op/step concurrency pool, per pool. Absent for a pool Dagster reports no limit for (see docs/metrics.md)",
+			[]string{"pool", "using_default_limit"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
@@ -241,6 +270,10 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.assetStaleStatusDesc
 	ch <- c.assetLastMaterializationStatusDesc
 	ch <- c.assetLastMaterializationTimestampDesc
+	ch <- c.opPoolActiveSlotsDesc
+	ch <- c.opPoolAssignedStepsDesc
+	ch <- c.opPoolPendingStepsDesc
+	ch <- c.opPoolLimitDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -257,6 +290,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectSensorTickStatus(c, ch)
 	reflectDaemonHealth(c, ch)
 	reflectAssetStatus(c, ch)
+	reflectOpPoolConcurrency(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

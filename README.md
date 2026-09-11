@@ -104,6 +104,10 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_daemon_last_heartbeat_timestamp_seconds` | Gauge | When each daemon last reported a heartbeat. |
 | `dagster_code_location_load_error` | Gauge | Whether a code location most recently failed to load. |
 | `dagster_run_queue_concurrency_key_backlog` | Gauge | Runs queued behind a tag-based run-queue concurrency limit, per `dagster/concurrency_key` value. |
+| `dagster_op_pool_concurrency_active_slots` | Gauge | Slots currently claimed (steps actively running) against an op/step concurrency pool, per pool — a separate mechanism from the run-queue backlog above. |
+| `dagster_op_pool_concurrency_assigned_steps` | Gauge | Steps assigned a slot against a pool but not yet running, per pool. |
+| `dagster_op_pool_concurrency_pending_steps` | Gauge | Steps waiting for a slot against a pool, not yet assigned one, per pool. |
+| `dagster_op_pool_concurrency_limit` | Gauge | Effective concurrency limit configured for a pool, per pool — divide into active slots for utilization. |
 | `dagster_schedule_status` | Gauge | Whether a schedule is currently on or off. |
 | `dagster_schedule_last_tick_status` | Gauge | Outcome of a schedule's most recent tick. |
 | `dagster_schedule_last_tick_timestamp_seconds` | Gauge | When a schedule last ticked, so a stalled schedule is detectable. |
@@ -116,7 +120,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 
 ### Exporter self-health
 
-These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status` — see [docs/architecture.md](docs/architecture.md)).
+These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `op_pool_concurrency` — see [docs/architecture.md](docs/architecture.md)).
 
 | Metric | Type | Description |
 | --- | --- | --- |
@@ -146,6 +150,11 @@ dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",st
 dagster_last_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 32.34893083572388
 
 dagster_run_queue_concurrency_key_backlog{concurrency_key="heavy_limit"} 3
+
+dagster_op_pool_concurrency_active_slots{pool="heavy_pool"} 1
+dagster_op_pool_concurrency_assigned_steps{pool="heavy_pool"} 1
+dagster_op_pool_concurrency_pending_steps{pool="heavy_pool"} 1
+dagster_op_pool_concurrency_limit{pool="heavy_pool",using_default_limit="true"} 1
 
 dagster_schedule_status{schedule_name="daily_refresh",location="dev-dagster-workspace",status="running"} 1
 
@@ -193,6 +202,14 @@ topk(5, dagster_last_run_duration_seconds)
 
 # Which concurrency keys currently have a run-queue backlog
 dagster_run_queue_concurrency_key_backlog > 0
+
+# Op pool utilization -- how full each pool's claimed slots are
+dagster_op_pool_concurrency_active_slots
+/
+dagster_op_pool_concurrency_limit
+
+# Pools with steps genuinely waiting on a slot right now
+dagster_op_pool_concurrency_pending_steps > 0
 
 # Schedules that are turned on but whose last tick wasn't a success
 # (covers both a hard failure and a skip)
@@ -320,6 +337,25 @@ Each produces a different tick status, so all three show up at once and an alert
 | `failing_sensor` | `failure` | `minimum_interval_seconds=30`, always raises |
 
 `failing_sensor` logs an error on every evaluation by design — intentional, like `failing_job` and the broken code location, not a sign the dev stack is misconfigured.
+
+### Testing op pool concurrency
+
+Like the broken-code-location fixture, this needs a manual trigger. `dev/dagster_workspace/job.py` defines two jobs behind a `heavy_pool` op/step concurrency pool (`dagster.yaml` sets `concurrency.pools.default_limit: 1`, so the pool has exactly one slot):
+
+| Fixture | What it exercises |
+| --- | --- |
+| `heavy_pool_job` | One op behind `heavy_pool`. Launch it twice back to back (Dagit → Launchpad, or the GraphQL API) and the second run queues behind the first — but **only as a whole run**; see the note below. |
+| `heavy_pool_fanout_job` | Two independent ops behind `heavy_pool`, run with `multiprocess_executor(max_concurrent=2)` so both are actually submitted for execution at once. Launch it once. |
+
+**`dagster_op_pool_concurrency_pending_steps` needs `heavy_pool_fanout_job`, not two launches of `heavy_pool_job`.** Verified live against 1.13.15: a run blocked at the run-queue admission level (two separate `heavy_pool_job` runs contending for the pool) never submits a step for execution at all, so it never shows up as pending — it just stays `QUEUED` as a whole run, same as the tag-based backlog above. Only a step that has actually been submitted and is waiting on a slot counts as pending, which needs two ops *within the same already-started run* contending for one slot — exactly what `heavy_pool_fanout_job` sets up. Launching it once produces all three states simultaneously:
+
+```
+dagster_op_pool_concurrency_active_slots{pool="heavy_pool"} 1
+dagster_op_pool_concurrency_assigned_steps{pool="heavy_pool"} 1
+dagster_op_pool_concurrency_pending_steps{pool="heavy_pool"} 1
+```
+
+Also verified live: `concurrency.pools.granularity` has to be `"op"`, not `"run"`, for any of this to be observable at all. Under `"run"` granularity, a pool's limit is still enforced at the run-queue admission level, but the exporter's four metrics — which read `instance.concurrencyLimits`, backed by Dagster's per-step slot-claiming tables — stay at `0` regardless, because run-granularity enforcement never actually claims a per-step slot. `dagster_op_pool_concurrency_limit` is the exception: it always reflects the pool's configured limit either way.
 
 ### Testing asset staleness
 
