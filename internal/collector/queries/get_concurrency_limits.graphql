@@ -1,0 +1,12 @@
+query GetConcurrencyLimits {
+  instance {
+    concurrencyLimits {
+      concurrencyKey
+      activeSlotCount
+      assignedStepCount
+      pendingStepCount
+      limit
+      usingDefaultLimit
+    }
+  }
+}
