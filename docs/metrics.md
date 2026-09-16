@@ -95,7 +95,7 @@ Labels: `concurrency_key`
 
 Number of runs currently `QUEUED` because of a tag-based run-queue concurrency limit (`dagster.yaml`'s `concurrency.runs.tag_concurrency_limits`), per `dagster/concurrency_key` tag value. Not job/location-scoped, since a concurrency key can be shared across jobs.
 
-Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would answer this directly, but it doesn't — it's backed by a separate op/step "pool" concurrency store and reports `0` for run-level tag-based backlog regardless of how many runs are actually queued behind a key, so this is computed by reading each `QUEUED` run's own tags instead.
+Note: Dagster's `instance.concurrencyLimits` GraphQL query looks like it would answer this directly, but it doesn't — it's backed by a separate op/step "pool" concurrency store and reports `0` for run-level tag-based backlog regardless of how many runs are actually queued behind a key, so this is computed by reading each `QUEUED` run's own tags instead. `instance.concurrencyLimits` is the right field for *that* separate mechanism — see `dagster_op_pool_concurrency_active_slots`.
 
 A concurrency key is zero-filled (not dropped) once its backlog clears, for the same reason as `dagster_active_runs`: a missing series and a `0` mean different things.
 
@@ -173,9 +173,47 @@ This exists because `dagster_asset_stale_status` only detects staleness *relativ
 
 `endTime`, not `updateTime`, to match the existing convention: `dagster_last_run_duration_seconds` already uses `endTime - creationTime` for completed jobs, so this stays consistent with how "when did this run finish" is computed elsewhere in the codebase.
 
+## `dagster_op_pool_concurrency_active_slots` (Gauge)
+
+Labels: `pool`
+
+Number of slots currently claimed — steps actively running — against an op/step concurrency pool (Dagster's `pool` argument on `@op`/`@asset`, config'd via `dagster.yaml`'s `concurrency.pools`), per pool.
+
+This is a distinct mechanism from `dagster_run_queue_concurrency_key_backlog`: that one tracks whole *runs* stuck in the queue behind a run-level `dagster/concurrency_key` tag, this tracks individual *steps* sharing a named pool of slots across the whole instance, regardless of which run or job they belong to. Both are sourced from Dagster's `instance.concurrencyLimits` GraphQL field having the wrong name for one of them and the right name for the other — see that metric's own doc for the details of why it can't answer the run-queue question. The label is `pool`, not `concurrency_key`, specifically so the two don't read as the same thing in a dashboard or alert.
+
+A step behind a pool passes through up to three states: pending (waiting for a slot, not yet assigned one) → assigned (a slot is reserved for it, but it hasn't started) → active (the slot is claimed and the step is running) — see `dagster_op_pool_concurrency_assigned_steps` and `dagster_op_pool_concurrency_pending_steps` for the other two.
+
+Unlike the run-queue backlog, this metric needs no exporter-side zero-fill and grows no unbounded map of its own (the concern [#81](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/81) raised for that one): `instance.concurrencyLimits` is sourced from Dagster's own event-log storage, which persistently remembers every pool that has ever claimed a slot and keeps reporting it at zero once it goes idle — confirmed by reading `SqlEventLogStorage.get_concurrency_keys`/`get_concurrency_info` against the pinned Dagster version, not just the GraphQL schema. The exporter just reflects whatever comes back on each scrape; a pool that has never been used simply never appears.
+
+**Requires `concurrency.pools.granularity: "op"` in `dagster.yaml`.** Verified live: under the other setting, `"run"`, a pool's limit is still enforced (at the run-queue admission level — a whole run is blocked from starting if none of its root steps' pools have room), but no per-step slot is ever actually claimed in the tables this metric reads, so `active_slots`/`assigned_steps`/`pending_steps` all stay `0` regardless of real contention. `dagster_op_pool_concurrency_limit` is unaffected either way, since it reads the pool's configured limit directly rather than derived slot state. See [dev/dagster_home/dagster.yaml](../dev/dagster_home/dagster.yaml) and the "Testing op pool concurrency" section in the README for how the dev fixture exercises this.
+
+## `dagster_op_pool_concurrency_assigned_steps` (Gauge)
+
+Labels: `pool`
+
+Number of steps assigned a slot against an op/step concurrency pool but not yet running, per pool — the middle of the three states described under `dagster_op_pool_concurrency_active_slots`. Included separately from pending/active so a full count of "how many steps are behind this pool right now" doesn't undercount by ignoring it.
+
+## `dagster_op_pool_concurrency_pending_steps` (Gauge)
+
+Labels: `pool`
+
+Number of steps waiting for a slot against an op/step concurrency pool, not yet assigned one, per pool — the first of the three states described under `dagster_op_pool_concurrency_active_slots`.
+
+Only counts a step that has actually been submitted for execution and is waiting on a slot — not a whole run still sitting in Dagster's run queue because none of its root steps could get a slot. Verified live: a run blocked at that admission stage never submits a step at all, so it contributes nothing here (it shows up as a `QUEUED` run instead, the same situation `dagster_run_queue_concurrency_key_backlog` was built for, just for a different concurrency mechanism). Seeing a nonzero value needs steps *within an already-started run* genuinely contending for a pool's slot — see the README's "Testing op pool concurrency" section for how the dev fixture sets that up.
+
+## `dagster_op_pool_concurrency_limit` (Gauge)
+
+Labels: `pool`, `using_default_limit`
+
+Effective concurrency limit (number of slots) configured for an op/step concurrency pool, per pool. Divide it into `dagster_op_pool_concurrency_active_slots` for utilization.
+
+`using_default_limit` is `"true"` when the pool has no explicit limit of its own and is running on the instance-wide default (`dagster.yaml`'s `concurrency.pools.default_limit`), `"false"` when it has been given one explicitly.
+
+Absent for a pool Dagster reports no limit for at all — the schema makes `limit` nullable, though in practice (checked against the pinned Dagster version's resolver) that only happens for a pool with no claimed slots and no configured instance-wide default; every pool that has actually done anything has a concrete limit.
+
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, or `asset_status` (the six concurrent collectors described in [docs/architecture.md](architecture.md)).
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven concurrent collectors described in [docs/architecture.md](architecture.md)).
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

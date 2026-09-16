@@ -1,6 +1,23 @@
 concurrency:
   pools:
-    granularity: "run"
+    # "op", not "run" -- verified live (issue #111): under "run" granularity
+    # a pool's ConcurrencyLimitsTable row still gets created (so
+    # instance.concurrencyLimits lists the pool and its limit), but the
+    # actual per-step slot claiming that populates activeSlotCount/
+    # pendingStepCount/assignedStepCount never happens -- run-granularity
+    # enforcement is front-loaded entirely into the run-queue admission
+    # decision, with nothing written to ConcurrencySlotsTable/
+    # PendingStepsTable afterward. Confirmed by launching two concurrent
+    # runs against heavy_pool under "run" granularity and watching both
+    # start immediately with every count staying at 0. "op" granularity is
+    # what actually exercises dagster_op_pool_concurrency_active_slots/
+    # _pending_steps/_assigned_steps.
+    granularity: "op"
+    # Deliberately 1: exercises dagster_op_pool_concurrency_pending_steps
+    # (see heavy_pool_job in dev/dagster_workspace/job.py) by making two
+    # concurrent runs against the same pool contend for a single slot,
+    # without needing a per-pool override.
+    default_limit: 1
   runs:
     tag_concurrency_limits:
     - key: "dagster/concurrency_key"

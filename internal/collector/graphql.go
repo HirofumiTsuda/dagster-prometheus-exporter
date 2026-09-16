@@ -524,6 +524,55 @@ func getAssetsLatestInfo(ctx context.Context, request *GraphQLRequest, dagsterGr
 	return &resp, nil
 }
 
+// GraphQLConcurrencyLimitsResponse is the shape of instance.concurrencyLimits:
+// Dagster's op/step "pool" concurrency accounting (see CollectOpPoolConcurrency
+// for why this is a different mechanism from the run-queue's
+// dagster/concurrency_key tag). Like GraphQLDaemonHealthResponse, instance
+// and concurrencyLimits are both non-null object/list types in the schema,
+// so there's no __typename to check here.
+//
+// limit and usingDefaultLimit are nullable in the schema. In practice,
+// reading the pinned 1.13.15's resolver
+// (dagster/_utils/concurrency.py's ConcurrencyKeyInfo, backing
+// SqlEventLogStorage.get_concurrency_info) shows limit only comes back null
+// for a pool with no slots yet *and* no instance-wide default configured —
+// every pool that has actually claimed a slot has a concrete limit. Kept as
+// a pointer anyway rather than assumed non-null, the same defensive choice
+// GraphQLDaemonHealthResponse makes for Healthy/LastHeartbeatTime.
+type GraphQLConcurrencyLimitsResponse struct {
+	Data struct {
+		Instance struct {
+			ConcurrencyLimits []struct {
+				ConcurrencyKey    string `json:"concurrencyKey"`
+				ActiveSlotCount   int    `json:"activeSlotCount"`
+				AssignedStepCount int    `json:"assignedStepCount"`
+				PendingStepCount  int    `json:"pendingStepCount"`
+				Limit             *int   `json:"limit"`
+				UsingDefaultLimit *bool  `json:"usingDefaultLimit"`
+			} `json:"concurrencyLimits"`
+		} `json:"instance"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_concurrency_limits.graphql
+var concurrencyLimitsQuery string
+
+func getConcurrencyLimitsRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: concurrencyLimitsQuery,
+	}
+}
+
+func getConcurrencyLimits(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLConcurrencyLimitsResponse, error) {
+	var resp GraphQLConcurrencyLimitsResponse
+	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 //go:embed queries/get_version.graphql
 var versionQuery string
 

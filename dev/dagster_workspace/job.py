@@ -8,6 +8,7 @@ from dagster import (
     SkipReason,
     asset,
     job,
+    multiprocess_executor,
     op,
     sensor,
 )
@@ -46,7 +47,48 @@ def quick_job():
     quick_op()
 
 
-jobs = [heavy_job, failing_job, quick_job]
+@op(pool="heavy_pool")
+def heavy_pool_op():
+    """An op behind the heavy_pool concurrency pool (not the same mechanism
+    as heavy_job's dagster/concurrency_key tag -- see
+    dagster_op_pool_concurrency_active_slots in docs/metrics.md). Sleeps long
+    enough that launching heavy_pool_job a second time while the first is
+    still running holds heavy_pool's only slot (dagster.yaml's
+    concurrency.pools.default_limit: 1), for exercising
+    dagster_op_pool_concurrency_pending_steps/_assigned_steps."""
+    time.sleep(30)
+
+
+@job
+def heavy_pool_job():
+    heavy_pool_op()
+
+
+@op(pool="heavy_pool")
+def heavy_pool_op_b():
+    """A second op sharing heavy_pool_op's pool, with no data dependency
+    between them, so a single run of heavy_pool_fanout_job can exercise
+    dagster_op_pool_concurrency_pending_steps within one run. Launching
+    heavy_pool_job twice, by contrast, only ever contends at the run-queue
+    admission level (see dagster.yaml's concurrency.pools comment) --
+    verified live: a run blocked there never submits a step at all, so
+    pendingStepCount stays 0 no matter how many runs pile up against the
+    pool. Only a step that's actually been submitted for execution and is
+    waiting on a slot counts as pending."""
+    time.sleep(15)
+
+
+# max_concurrent=2 so both ops are actually submitted for execution at once
+# (the default executor here would run them sequentially in-process, in
+# which case op_b would never be submitted until heavy_pool_op finished and
+# freed the slot itself -- never observably pending).
+@job(executor_def=multiprocess_executor.configured({"max_concurrent": 2}))
+def heavy_pool_fanout_job():
+    heavy_pool_op()
+    heavy_pool_op_b()
+
+
+jobs = [heavy_job, failing_job, quick_job, heavy_pool_job, heavy_pool_fanout_job]
 
 # default_status=RUNNING so it's already ticking without a manual toggle in
 # the UI/API — see the "Testing schedule tick status" section in README.md.
