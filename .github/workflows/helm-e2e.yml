@@ -132,6 +132,24 @@ jobs:
             echo
           done
 
+          # dagster_op_pool_concurrency_* (#111/#119) needs heavy_pool actually
+          # claimed at least once -- instance.concurrencyLimits (what the
+          # collector reads) is empty until a pool has been touched, but then
+          # persistently reports it (settled at 0, limit unchanged) forever
+          # after, per #119's own verification -- so one launch here is enough
+          # regardless of exactly when this step's poll loop below catches it.
+          # heavy_pool_fanout_job specifically (not heavy_pool_job) is what
+          # exercises all four metrics at once: two ops sharing one pool slot
+          # under multiprocess_executor(max_concurrent=2) means one is
+          # active while the other is genuinely pending, not just queued at
+          # the run level (see the op docstrings in dev/dagster_workspace/job.py).
+          echo "--- launching heavy_pool_fanout_job (dagster_op_pool_concurrency_* needs heavy_pool actually claimed once) ---"
+          curl -sf -X POST http://localhost:3000/graphql -H 'Content-Type: application/json' -d '{
+            "query": "mutation($e: ExecutionParams!) { launchPipelineExecution(executionParams: $e) { __typename ... on LaunchRunSuccess { run { runId status } } ... on PythonError { message } } }",
+            "variables": {"e": {"selector": {"repositoryLocationName": "dev-dagster-workspace", "repositoryName": "__repository__", "jobName": "heavy_pool_fanout_job"}, "mode": "default"}}
+          }'
+          echo
+
           kill "$DAGSTER_PORT_FORWARD_PID"
 
       - name: Install the exporter chart
