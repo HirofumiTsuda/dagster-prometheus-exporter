@@ -24,6 +24,12 @@ spec:
         - name: dagster
           image: dagster-prometheus-exporter-e2e:dagster
           imagePullPolicy: Never
+          # Overrides the image's default CMD (plain `dagster dev`, no -w,
+          # which only loads pyproject.toml's single healthy location) to
+          # also load dev/broken_location/ via dev/workspace-e2e.yaml -- see
+          # issue #90: dagster_code_location_load_error's `=1` case had no
+          # e2e coverage, only the healthy `=0` case.
+          command: ["uv", "run", "--group", "dbt", "dagster", "dev", "-w", "dev/workspace-e2e.yaml", "-h", "0.0.0.0", "-p", "3000"]
           ports:
             - containerPort: 3000
           readinessProbe:

@@ -202,6 +202,18 @@ jobs:
           fi
           echo "all $(wc -l < /tmp/expected-metrics-asserted.txt) asserted metric families are present"
 
+          # Family-presence above only proves *some* series exists for
+          # dagster_code_location_load_error -- dev/workspace-e2e.yaml's
+          # healthy location alone would satisfy that just as well as it did
+          # before issue #90, silently missing a regression in the broken-
+          # location detection itself. Assert both label/value combinations
+          # explicitly instead.
+          echo "--- code_location_load_error: broken_location=1, healthy location=0 ---"
+          echo "$METRICS" | grep -qF 'dagster_code_location_load_error{location="broken_location"} 1' \
+            || { echo "::error::broken_location did not report dagster_code_location_load_error=1"; exit 1; }
+          echo "$METRICS" | grep -qF 'dagster_code_location_load_error{location="dev-dagster-workspace"} 0' \
+            || { echo "::error::dev-dagster-workspace did not report dagster_code_location_load_error=0"; exit 1; }
+
           kill "$PORT_FORWARD_PID"
 
       - name: Dump pod state for debugging
