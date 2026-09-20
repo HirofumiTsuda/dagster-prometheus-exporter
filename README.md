@@ -69,6 +69,8 @@ Dagster doesn't expose a native Prometheus metrics endpoint. The commonly sugges
 
 This exporter instead polls Dagster's GraphQL API directly and derives every metric (including queued/active runs) from Dagster's own run state, so none of the above gaps apply.
 
+Metrics are only half the observability picture — for distributed tracing of Dagster ops/assets (span-per-step, correlated log lines), see [`dagster-otel`](https://github.com/HirofumiTsuda/dagster-otel) (same author). Its README has a [combined demo](https://github.com/HirofumiTsuda/dagster-otel#combined-demo-this-project--dagster-prometheus-exporter) running both projects' output side by side in one Grafana dashboard.
+
 ## Architecture
 
 ```mermaid
