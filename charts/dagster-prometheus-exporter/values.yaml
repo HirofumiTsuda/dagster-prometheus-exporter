@@ -121,6 +121,36 @@ alerts:
       annotations:
         summary: "Dagster job {{ $labels.job_name }} has a run stuck in the queue"
         description: "Job {{ $labels.job_name }} in code location {{ $labels.location }} has had a run sitting queued for {{ $value | humanizeDuration }}."
+    runQueueConcurrencyKeyBacklog:
+      # A backlog of 1-2 briefly is routine as runs cycle through a limited
+      # concurrency key; sustained backlog for 15m suggests the limit itself
+      # is undersized for actual load, not just normal queuing turnover.
+      enabled: true
+      alert: DagsterRunQueueConcurrencyKeyBacklog
+      expr: dagster_run_queue_concurrency_key_backlog > 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster concurrency key {{ $labels.concurrency_key }} has a sustained run backlog"
+        description: "Concurrency key {{ $labels.concurrency_key }} has had at least one run queued behind its tag-based limit for over 15 minutes ({{ $value }} currently backlogged), suggesting the limit may be undersized for current load."
+    opPoolConcurrencyPendingSteps:
+      # Same reasoning as runQueueConcurrencyKeyBacklog above, for the
+      # separate op/step pool concurrency mechanism: a step waiting briefly
+      # for a slot is routine, sustained pending for 15m suggests the pool's
+      # limit doesn't match actual demand. Requires
+      # concurrency.pools.granularity: "op" in dagster.yaml -- under "run"
+      # granularity this metric stays 0 regardless of real contention, see
+      # docs/metrics.md.
+      enabled: true
+      alert: DagsterOpPoolConcurrencyPendingSteps
+      expr: dagster_op_pool_concurrency_pending_steps > 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster op/step pool {{ $labels.pool }} has steps stuck pending"
+        description: "Pool {{ $labels.pool }} has had at least one step waiting for a slot for over 15 minutes ({{ $value }} currently pending), suggesting the pool's limit may be undersized for current load."
     scheduleNotSucceeding:
       enabled: true
       alert: DagsterScheduleNotSucceeding
@@ -174,6 +204,23 @@ alerts:
       annotations:
         summary: "Dagster asset {{ $labels.asset_key }} hasn't been materialized recently"
         description: "Asset {{ $labels.asset_key }} hasn't been materialized in over {{ $value | humanizeDuration }}."
+    assetStale:
+      # Unlike assetMaterializationStale above, this is dependency-based
+      # (Dagster's own code_version comparison against upstream), not
+      # wall-clock -- so unlike that one, there's no per-installation
+      # cadence to tune and this can default on. Note it can co-fire with
+      # assetMaterializationFailed: that one means the last run errored,
+      # this one means the data itself is behind its upstream -- distinct
+      # signals worth keeping separate, see docs/metrics.md.
+      enabled: true
+      alert: DagsterAssetStale
+      expr: dagster_asset_stale_status{status="stale"} == 1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster asset {{ $labels.asset_key }} is stale relative to its upstream"
+        description: "Asset {{ $labels.asset_key }} hasn't been rematerialized since an upstream dependency changed, based on Dagster's own code_version comparison (not elapsed time)."
     codeLocationLoadError:
       enabled: true
       alert: DagsterCodeLocationLoadError
