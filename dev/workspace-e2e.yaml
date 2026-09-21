@@ -1,0 +1,18 @@
+# Used only by the kind-based e2e fixture (dev/kubernetes/dagster-deployment.yaml,
+# see .github/workflows/helm-e2e.yml and issue #90) -- not dev/workspace.yaml,
+# which is the interactive local-dev version of the same idea and names its
+# healthy location differently (dev-dagster-location, see README.md's
+# "Testing a broken code location" section).
+#
+# The healthy location here keeps the name pyproject.toml's [tool.dagster]
+# section gives it (dev-dagster-workspace) so the e2e workflow's existing
+# GraphQL calls (repositoryLocationName: "dev-dagster-workspace") keep
+# working unchanged when this file replaces the plain `dagster dev` (no -w)
+# the image's Dockerfile CMD otherwise runs.
+load_from:
+  - python_module:
+      module_name: dev.dagster_workspace.definitions
+      location_name: dev-dagster-workspace
+  - python_file:
+      relative_path: broken_location/definitions.py
+      location_name: broken_location
