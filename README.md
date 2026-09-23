@@ -306,8 +306,10 @@ If you're running the exporter directly on the host (not via `docker compose`) a
 If you already have your own Grafana/Prometheus and just want the dashboard, import the JSON directly:
 
 1. In Grafana, go to **Dashboards → New → Import**.
-2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json).
+2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json) -- works as-is if you have a single, default Prometheus data source configured (same assumption this repo's own `docker compose` stack makes).
 3. Point it at a Prometheus data source that's scraping this exporter.
+
+[`docs/dagster-dashboard.grafana-com.json`](docs/dagster-dashboard.grafana-com.json) is the same dashboard, packaged for grafana.com/ArtifactHub-style sharing instead -- it declares a `${DS_PROMETHEUS}` input (via `__inputs`/`__requires`) so Grafana's import wizard prompts you to pick a data source rather than assuming a default one. Kept as a separate file rather than editing the one above in place: `dev/grafana/dashboards/dagster-dashboard.json` is loaded by this repo's own `docker compose` stack via file-based provisioning, which never resolves `${...}` template inputs at all (that substitution only happens through Grafana's own Import wizard/API) -- templating it in place would silently break every panel in local dev.
 
 ### Testing a broken code location
 
