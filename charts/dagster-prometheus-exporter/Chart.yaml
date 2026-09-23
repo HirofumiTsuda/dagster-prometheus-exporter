@@ -2,7 +2,7 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.7
+version: 0.1.8
 # Must exactly match a real tag on ghcr.io/hirofumitsuda/dagster-prometheus-exporter
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
@@ -34,6 +34,8 @@ annotations:
       url: https://raw.githubusercontent.com/HirofumiTsuda/dagster-prometheus-exporter/main/docs/images/grafana-dashboard.png
   artifacthub.io/changes: |
     - kind: added
-      description: Optional PrometheusRule alerts (13 rules covering daemon heartbeat, run/schedule/sensor health, asset staleness, and exporter self-health), disabled by default via alerts.enabled (#112, #113 -- thanks @Pionerd for the proposal and reference rules). First chart release to include this.
+      description: "Optional PrometheusRule alerts (13 rules covering daemon heartbeat, run/schedule/sensor health, asset staleness, and exporter self-health), disabled by default via alerts.enabled (#112, #113 -- thanks @Pionerd for the proposal and reference rules). First chart release to include this."
     - kind: added
-      description: ArtifactHub listing metadata (screenshot, changelog annotations).
+      description: "ArtifactHub listing metadata (screenshot, changelog annotations)."
+    - kind: fixed
+      description: "Fixed the previous release's changelog entry getting silently truncated at \"#112,\" -- an unquoted YAML scalar treats a space followed by # as a comment, cutting everything after it. Quoting the description avoids this."
