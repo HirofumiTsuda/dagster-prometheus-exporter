@@ -34,4 +34,6 @@ annotations:
       url: https://raw.githubusercontent.com/HirofumiTsuda/dagster-prometheus-exporter/main/docs/images/grafana-dashboard.png
   artifacthub.io/changes: |
     - kind: added
-      description: ArtifactHub listing metadata (screenshot, changelog annotations) -- no functional change to the exporter or chart templates.
+      description: Optional PrometheusRule alerts (13 rules covering daemon heartbeat, run/schedule/sensor health, asset staleness, and exporter self-health), disabled by default via alerts.enabled (#112, #113 -- thanks @Pionerd for the proposal and reference rules). First chart release to include this.
+    - kind: added
+      description: ArtifactHub listing metadata (screenshot, changelog annotations).
