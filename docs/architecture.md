@@ -33,6 +33,8 @@ Named for what it actually fetches: `repositoriesOrError`, which exposes jobs, s
 
 It builds the known-jobs set used to prune/seed completed-run counters and last-run status (unchanged since before schedules/sensors existed), plus each schedule's and sensor's enabled/disabled state and most recent tick (`dagster_schedule_status`/`dagster_schedule_last_tick_status`, `dagster_sensor_status`/`dagster_sensor_last_tick_status`). Dagster's `Schedule.scheduleState` and `Sensor.sensorState` are both the same `InstigationState` type under the hood, so the two pairs of metrics are structurally identical.
 
+Pruning doesn't act on a job's first absence from that set. Because `repositoriesOrError` omits a code location that fails to load, "this job was deleted" and "this job's code location is broken right now" look the same in the roster, and pruning the second case resets `dagster_completed_runs_total` to 0 (a counter reset, so `increase()` over the outage overcounts) and drops `dagster_last_run_info` for exactly the jobs that just broke. So a job is held back while `dagster_code_location_load_error` is 1 for its location, and otherwise for a few consecutive rosters — the grace period covers the window where the location is already broken but the load error hasn't landed yet, since the two collectors run concurrently.
+
 ## Incremental completed-run fetching
 
 Fetching completed runs is incremental, not a full re-scan every cycle: after the first scrape (which backfills `LOOKBACK_WINDOW_MINUTES`), each subsequent scrape only asks Dagster for runs updated since the last-seen watermark (minus a small safety margin, to tolerate a run's DB write committing slightly after its `updateTime`).

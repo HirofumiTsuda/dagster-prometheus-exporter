@@ -93,6 +93,108 @@ func TestCollectDefinitionsRosterSeedsAndPrunesJobs(t *testing.T) {
 	assert.NotContains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
 }
 
+func TestRetainedJobsHoldsBackAJobUntilItsAbsenceIsConclusive(t *testing.T) {
+	key := JobKey{JobName: "job_a", LocationName: "loc_a"}
+	empty := map[JobKey]struct{}{}
+
+	t.Run("a job in a code location that is failing to load is never pruned", func(t *testing.T) {
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c.trackedCompletedRunKeys[key] = struct{}{}
+		c.lastRunStatus[key] = lastRunEntry{status: "SUCCESS", endTime: 100}
+		c.codeLocationLoadError = map[string]bool{"loc_a": true}
+
+		for range jobAbsenceGraceScrapes + 5 {
+			assert.Contains(t, retainedJobs(c, empty), key)
+		}
+	})
+
+	t.Run("a job that just disappears is pruned once the grace period runs out", func(t *testing.T) {
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c.trackedCompletedRunKeys[key] = struct{}{}
+
+		for range jobAbsenceGraceScrapes - 1 {
+			assert.Contains(t, retainedJobs(c, empty), key)
+		}
+		assert.NotContains(t, retainedJobs(c, empty), key)
+	})
+
+	t.Run("a job that comes back starts its grace period over", func(t *testing.T) {
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c.trackedCompletedRunKeys[key] = struct{}{}
+		known := map[JobKey]struct{}{key: {}}
+
+		for range jobAbsenceGraceScrapes - 1 {
+			retainedJobs(c, empty)
+		}
+		retainedJobs(c, known)
+
+		for range jobAbsenceGraceScrapes - 1 {
+			assert.Contains(t, retainedJobs(c, empty), key)
+		}
+	})
+}
+
+// A code location that fails to load is omitted from repositoriesOrError
+// rather than reported as an error, so its jobs look deleted. Pruning them
+// resets dagster_completed_runs_total to 0 (a counter reset Prometheus reads
+// as a restart) and drops dagster_last_run_info for exactly the jobs whose
+// deploy just broke.
+func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing.T) {
+	roster := `{
+		"data": {
+			"repositoriesOrError": {
+				"__typename": "RepositoryConnection",
+				"nodes": [
+					{"name": "repo", "location": {"name": "loc_a"}, "jobs": [{"name": "job_a"}], "schedules": []}
+				]
+			}
+		}
+	}`
+	broken := `{
+		"data": {
+			"repositoriesOrError": {"__typename": "RepositoryConnection", "nodes": []}
+		}
+	}`
+
+	body := roster
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(body))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+
+	key := JobKey{JobName: "job_a", LocationName: "loc_a"}
+	c.completedRunsCounter.WithLabelValues("job_a", "loc_a", "success").Inc()
+	c.lastRunStatus[key] = lastRunEntry{status: "SUCCESS", endTime: 100}
+
+	body = broken
+	c.codeLocationLoadError = map[string]bool{"loc_a": true}
+	for range jobAbsenceGraceScrapes + 5 {
+		require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+	}
+
+	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "loc_a", "success")
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), testutil.ToFloat64(metric),
+		"a broken code location must not reset the job's completed-run counter")
+	assert.Contains(t, c.lastRunStatus, key,
+		"a broken code location must not silence the job's last-run status")
+
+	// The location loads again, this time genuinely without job_a.
+	c.codeLocationLoadError = map[string]bool{"loc_a": false}
+	for range jobAbsenceGraceScrapes {
+		require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+	}
+
+	assert.NotContains(t, c.trackedCompletedRunKeys, key)
+	assert.NotContains(t, c.lastRunStatus, key)
+}
+
 func TestCollectDefinitionsRosterReturnsErrorOnServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
