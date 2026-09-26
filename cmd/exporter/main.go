@@ -18,9 +18,13 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	server.RunServer(ctx, cfg)
+	// stop() is called explicitly rather than deferred: log.Fatalf below
+	// would skip a deferred call.
+	err = server.RunServer(ctx, cfg)
+	stop()
+	if err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
 
 	log.Println("Application completely stopped.")
 }
