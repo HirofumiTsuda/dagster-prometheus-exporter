@@ -82,13 +82,16 @@ const jobAbsenceGraceScrapes = 3
 // Two things hold a job back. A location that CollectCodeLocationStatus
 // currently reports as failing to load (workspaceOrError still lists it,
 // unlike repositoriesOrError) explains the absence outright, so its jobs are
-// retained indefinitely. Everything else is retained for a few scrapes, which
-// covers a location that's broken but whose load error hasn't landed in
-// c.codeLocationLoadError yet — the two collectors run concurrently, so that
-// map can be one cycle behind the roster.
+// retained indefinitely. Everything else is retained until it has been missing
+// from jobAbsenceGraceScrapes consecutive rosters, which covers a location
+// that's broken but whose load error hasn't landed in c.codeLocationLoadError
+// yet — the two collectors run concurrently, so that map can be one cycle
+// behind the roster.
 //
 // Callers must hold c.mutex.
 func retainedJobs(c *DagsterCollector, known map[JobKey]struct{}) map[JobKey]struct{} {
+	// retained: jobs whose series must survive this roster. The caller
+	// prunes every job not in it.
 	retained := make(map[JobKey]struct{}, len(known))
 	for key := range known {
 		retained[key] = struct{}{}
@@ -108,6 +111,7 @@ func retainedJobs(c *DagsterCollector, known map[JobKey]struct{}) map[JobKey]str
 			return
 		}
 		streak := c.jobAbsenceStreak[key] + 1
+		// Gone for jobAbsenceGraceScrapes rosters in a row: treat as deleted.
 		if streak >= jobAbsenceGraceScrapes {
 			return
 		}
