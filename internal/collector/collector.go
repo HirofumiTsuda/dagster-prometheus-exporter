@@ -48,6 +48,7 @@ type DagsterCollector struct {
 	processedRuns           *ttlcache.Cache[string, struct{}]
 	lookbackWindow          time.Duration
 	knownJobs               map[JobKey]struct{}
+	jobAbsenceStreak        map[JobKey]int
 	lastRunStatus           map[JobKey]lastRunEntry
 	trackedCompletedRunKeys map[JobKey]struct{}
 	lastSeenUpdateTime      float64
@@ -242,6 +243,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, loo
 		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
+		jobAbsenceStreak:             make(map[JobKey]int),
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,

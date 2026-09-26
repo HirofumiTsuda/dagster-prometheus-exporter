@@ -114,10 +114,12 @@ func reflectLastRun(c *DagsterCollector, ch chan<- prometheus.Metric) {
 
 // pruneLastRunStatus deletes cached last-run status for jobs that no longer
 // exist, so dagster_last_run_info doesn't keep reporting stale entries
-// forever for removed jobs. Callers must hold c.mutex.
-func pruneLastRunStatus(c *DagsterCollector, known map[JobKey]struct{}) {
+// forever for removed jobs. retained is the roster plus the jobs whose
+// absence from it isn't conclusive yet (see retainedJobs).
+// Callers must hold c.mutex.
+func pruneLastRunStatus(c *DagsterCollector, retained map[JobKey]struct{}) {
 	for key := range c.lastRunStatus {
-		if _, ok := known[key]; !ok {
+		if _, ok := retained[key]; !ok {
 			delete(c.lastRunStatus, key)
 		}
 	}
@@ -136,14 +138,16 @@ func seedCompletedRunsCounter(c *DagsterCollector, known map[JobKey]struct{}) {
 }
 
 // pruneCompletedRunsCounter deletes every tracked (job, location) series that
-// isn't in known. This covers both jobs removed from Dagster and runs whose
-// repositoryOrigin recorded a location name (e.g. an old, since-renamed
-// auto-generated grpc location name) that never matches a live location, so
-// those don't linger in dagster_completed_runs_total forever.
+// isn't in retained (the roster plus the jobs whose absence from it isn't
+// conclusive yet — see retainedJobs). This covers both jobs removed from
+// Dagster and runs whose repositoryOrigin recorded a location name (e.g. an
+// old, since-renamed auto-generated grpc location name) that never matches a
+// live location, so those don't linger in dagster_completed_runs_total
+// forever.
 // Callers must hold c.mutex.
-func pruneCompletedRunsCounter(c *DagsterCollector, known map[JobKey]struct{}) {
+func pruneCompletedRunsCounter(c *DagsterCollector, retained map[JobKey]struct{}) {
 	for key := range c.trackedCompletedRunKeys {
-		if _, ok := known[key]; ok {
+		if _, ok := retained[key]; ok {
 			continue
 		}
 		for _, status := range completedStatuses {
