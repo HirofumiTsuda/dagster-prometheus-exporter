@@ -80,7 +80,7 @@ func TestCollectDefinitionsRosterSeedsAndPrunesJobs(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 	assert.Contains(t, c.knownJobs, JobKey{JobName: "job_a", LocationName: "loc_a"})
@@ -98,7 +98,7 @@ func TestRetainedJobsHoldsBackAJobUntilItsAbsenceIsConclusive(t *testing.T) {
 	empty := map[JobKey]struct{}{}
 
 	t.Run("a job in a code location that is failing to load is never pruned", func(t *testing.T) {
-		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 		c.trackedCompletedRunKeys[key] = struct{}{}
 		c.lastRunStatus[key] = lastRunEntry{status: "SUCCESS", endTime: 100}
 		c.codeLocationLoadError = map[string]bool{"loc_a": true}
@@ -109,7 +109,7 @@ func TestRetainedJobsHoldsBackAJobUntilItsAbsenceIsConclusive(t *testing.T) {
 	})
 
 	t.Run("a job that just disappears is pruned once the grace period runs out", func(t *testing.T) {
-		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 		c.trackedCompletedRunKeys[key] = struct{}{}
 
 		for range jobAbsenceGraceScrapes - 1 {
@@ -119,7 +119,7 @@ func TestRetainedJobsHoldsBackAJobUntilItsAbsenceIsConclusive(t *testing.T) {
 	})
 
 	t.Run("a job that comes back starts its grace period over", func(t *testing.T) {
-		c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+		c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 		c.trackedCompletedRunKeys[key] = struct{}{}
 		known := map[JobKey]struct{}{key: {}}
 
@@ -165,7 +165,7 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 
 	key := JobKey{JobName: "job_a", LocationName: "loc_a"}
@@ -201,7 +201,7 @@ func TestCollectDefinitionsRosterReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectDefinitionsRoster(t.Context(), c))
 }
@@ -249,7 +249,7 @@ func TestCollectDefinitionsRosterTracksScheduleStatusAndLastTick(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 
 	tickedKey := ScheduleKey{ScheduleName: "my_schedule", LocationName: "loc_a"}
@@ -381,7 +381,7 @@ func TestCollectDefinitionsRosterAsksForTicksInAWayDagsterAnswers(t *testing.T) 
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 
 	assert.Contains(t, c.scheduleTickStatus, ScheduleKey{ScheduleName: "sched_a", LocationName: "loc_a"},

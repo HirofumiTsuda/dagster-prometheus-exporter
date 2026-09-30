@@ -35,7 +35,7 @@ func TestCollectActiveRunsLocationLabel(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	assert.NoError(t, CollectActiveRuns(t.Context(), c))
 
 	assert.Equal(t, 1, c.activeRunAggregates[ActiveRunKey{JobName: "job_a", LocationName: "loc_a", Status: "STARTED"}].count)
@@ -60,7 +60,7 @@ func TestCollectActiveRunsZeroFillsKnownJobs(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	c.knownJobs = map[JobKey]struct{}{
 		{JobName: "never_run_job", LocationName: "loc_a"}: {},
 	}
@@ -80,7 +80,7 @@ func TestCollectActiveRunsReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectActiveRuns(t.Context(), c))
 }
@@ -116,7 +116,7 @@ func TestCollectActiveRunsTracksMaxElapsedPerGroup(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectActiveRuns(t.Context(), c))
 
 	agg := c.activeRunAggregates[ActiveRunKey{JobName: "job_a", LocationName: "loc_a", Status: "STARTED"}]
@@ -189,7 +189,7 @@ func TestCollectActiveRunsAlsoTracksConcurrencyKeyBacklog(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectActiveRuns(t.Context(), c))
 	// Only the two QUEUED runs count toward backlog; the STARTED one (past

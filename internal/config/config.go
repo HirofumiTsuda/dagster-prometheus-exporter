@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Port                         int
 	DagsterGraphQLEndpoint       string
+	DagsterCloudAPIToken         string
 	LookbackWindow               time.Duration
 	CacheTTL                     time.Duration
 	DagsterScrapingInterval      time.Duration
@@ -90,6 +91,16 @@ func Load() (*Config, error) {
 		dagsterGraphQLEndpoint = "http://127.0.0.1:3000/graphql"
 	}
 
+	// Optional, and empty by default: OSS Dagster's GraphQL API is
+	// unauthenticated, so the common case sets nothing here and no auth
+	// header is sent (see doGraphQL). It's required only for Dagster+, whose
+	// per-deployment GraphQL endpoint
+	// (https://<org>.dagster.cloud/<deployment>/graphql) rejects every
+	// request without a Dagster-Cloud-Api-Token header. Read from the
+	// environment rather than a flag so the token isn't exposed in the
+	// process's argv/command line.
+	dagsterCloudAPIToken := os.Getenv("DAGSTER_CLOUD_API_TOKEN")
+
 	dagsterScrapingInterval, err := getEnvDuration("DAGSTER_SCRAPING_INTERVAL_SECONDS", time.Second, 15*time.Second)
 	if err != nil {
 		return nil, err
@@ -139,6 +150,7 @@ func Load() (*Config, error) {
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
+		DagsterCloudAPIToken:         dagsterCloudAPIToken,
 		LookbackWindow:               lookbackWindow,
 		CacheTTL:                     cacheTTL,
 		DagsterScrapingInterval:      dagsterScrapingInterval,

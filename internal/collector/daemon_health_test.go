@@ -43,7 +43,7 @@ func daemonHealthServer(t *testing.T, body string) *httptest.Server {
 
 func TestCollectDaemonHealth(t *testing.T) {
 	ts := daemonHealthServer(t, daemonHealthBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectDaemonHealth(t.Context(), c))
 
@@ -64,7 +64,7 @@ func TestCollectDaemonHealth(t *testing.T) {
 
 func TestReflectDaemonHealthMetrics(t *testing.T) {
 	ts := daemonHealthServer(t, daemonHealthBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectDaemonHealth(t.Context(), c))
 
 	ch := make(chan prometheus.Metric, 16)
@@ -108,6 +108,6 @@ func TestCollectDaemonHealthReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	assert.Error(t, CollectDaemonHealth(t.Context(), c))
 }

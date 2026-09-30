@@ -14,7 +14,7 @@ import (
 )
 
 func TestRecordScrapeResultSuccess(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	c.RecordScrapeResult("active_runs", 250*time.Millisecond, nil)
 
@@ -47,7 +47,7 @@ func TestRecordScrapeResultSuccess(t *testing.T) {
 }
 
 func TestRecordScrapeResultFailureIncrementsErrorCounter(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	c.RecordScrapeResult("definitions_roster", 100*time.Millisecond, errors.New("boom"))
 	c.RecordScrapeResult("definitions_roster", 100*time.Millisecond, errors.New("boom again"))

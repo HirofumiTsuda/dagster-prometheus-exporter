@@ -52,7 +52,7 @@ func TestCollectCompletedRunsUsesIncrementalUpdatedAfter(t *testing.T) {
 
 	lookback := 2 * time.Hour
 	safetyMargin := 5 * time.Minute
-	c := NewDagsterCollector(t.Context(), ts.URL, lookback, time.Hour, 500, safetyMargin)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", lookback, time.Hour, 500, safetyMargin)
 
 	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	require.Len(t, seenUpdatedAfter, 1)
@@ -88,7 +88,7 @@ func TestCollectCompletedRunsTracksLastRunStatusAndDuration(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 
 	assert.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
@@ -170,7 +170,7 @@ func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 	require.Equal(t, "SUCCESS", c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}].status)
@@ -181,7 +181,7 @@ func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 }
 
 func TestPruneLastRunStatus(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	goneKey := JobKey{JobName: "gone_job", LocationName: "loc_a"}
 	stillHereKey := JobKey{JobName: "job_a", LocationName: "loc_a"}
@@ -195,7 +195,7 @@ func TestPruneLastRunStatus(t *testing.T) {
 }
 
 func TestSeedCompletedRunsCounter(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	known := map[JobKey]struct{}{
 		{JobName: "job_a", LocationName: "loc_a"}: {},
@@ -211,7 +211,7 @@ func TestSeedCompletedRunsCounter(t *testing.T) {
 }
 
 func TestPruneCompletedRunsCounter(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	previous := map[JobKey]struct{}{
 		{JobName: "gone_job", LocationName: "loc_a"}: {},
@@ -258,7 +258,7 @@ func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) 
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectCompletedRuns(t.Context(), c))
 
 	metric, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "old.module.path", "success")
@@ -294,7 +294,7 @@ func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectCompletedRuns(t.Context(), c))
 }

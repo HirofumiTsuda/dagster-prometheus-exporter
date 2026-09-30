@@ -44,7 +44,7 @@ type assetStatusEntry struct {
 // query.
 func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 	nodesReq := getAssetNodesRequest()
-	nodesResp, err := getAssetNodes(ctx, nodesReq, c.dagsterGraphQLEndpoint)
+	nodesResp, err := getAssetNodes(ctx, nodesReq, c.client)
 	if err != nil {
 		log.Printf("failed to collect asset nodes from dagster: %v", err)
 		return err
@@ -65,7 +65,7 @@ func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 	// assetsLatestInfo for an empty key list.
 	if len(assetKeys) > 0 {
 		infoReq := getAssetsLatestInfoRequest(assetKeys)
-		infoResp, err := getAssetsLatestInfo(ctx, infoReq, c.dagsterGraphQLEndpoint)
+		infoResp, err := getAssetsLatestInfo(ctx, infoReq, c.client)
 		if err != nil {
 			log.Printf("failed to collect assets latest info from dagster: %v", err)
 			return err

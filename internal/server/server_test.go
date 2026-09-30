@@ -34,7 +34,7 @@ func TestNewReadyzHandlerSuccess(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := newReadyzHandler(ts.URL, time.Second)
+	handler := newReadyzHandler(ts.URL, "", time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
@@ -55,7 +55,7 @@ func TestNewReadyzHandlerTimesOutOnSlowDagster(t *testing.T) {
 	defer ts.Close()
 	defer close(unblock)
 
-	handler := newReadyzHandler(ts.URL, 50*time.Millisecond)
+	handler := newReadyzHandler(ts.URL, "", 50*time.Millisecond)
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
@@ -73,7 +73,7 @@ func TestNewReadyzHandlerFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := newReadyzHandler(ts.URL, time.Second)
+	handler := newReadyzHandler(ts.URL, "", time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 

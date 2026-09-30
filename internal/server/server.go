@@ -50,14 +50,14 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
+	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
 	prometheus.MustRegister(c)
 	registerBuildInfo()
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.Handle("/readyz", newReadyzHandler(cfg.DagsterGraphQLEndpoint, cfg.DagsterScrapingTimeout))
+	mux.Handle("/readyz", newReadyzHandler(cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.DagsterScrapingTimeout))
 
 	srv := newHTTPServer(mux, cfg.DagsterScrapingTimeout)
 

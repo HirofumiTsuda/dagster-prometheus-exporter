@@ -18,6 +18,7 @@ import (
 var configEnvVars = []string{
 	"PORT",
 	"DAGSTER_GRAPHQL_ENDPOINT",
+	"DAGSTER_CLOUD_API_TOKEN",
 	"DAGSTER_SCRAPING_INTERVAL_SECONDS",
 	"DAGSTER_SCRAPING_TIMEOUT_SECONDS",
 	"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES",
@@ -44,6 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 
 	assert.Equal(t, 9101, cfg.Port)
 	assert.Equal(t, "http://127.0.0.1:3000/graphql", cfg.DagsterGraphQLEndpoint)
+	assert.Empty(t, cfg.DagsterCloudAPIToken, "no API token by default: OSS Dagster is unauthenticated")
 	assert.Equal(t, 15*time.Second, cfg.DagsterScrapingInterval)
 	assert.Equal(t, 10*time.Second, cfg.DagsterScrapingTimeout)
 	assert.Equal(t, 5*time.Minute, cfg.RunsUpdatedAfterSafetyMargin)
@@ -71,6 +73,7 @@ func TestLoadExplicitValuesOverrideDerivedDefaults(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PORT":                                     "8080",
 		"DAGSTER_GRAPHQL_ENDPOINT":                 "http://dagster.example:3000/graphql",
+		"DAGSTER_CLOUD_API_TOKEN":                  "agent:troweprice:secret-token",
 		"DAGSTER_SCRAPING_INTERVAL_SECONDS":        "30",
 		"DAGSTER_SCRAPING_TIMEOUT_SECONDS":         "20",
 		"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES": "2",
@@ -84,6 +87,7 @@ func TestLoadExplicitValuesOverrideDerivedDefaults(t *testing.T) {
 
 	assert.Equal(t, 8080, cfg.Port)
 	assert.Equal(t, "http://dagster.example:3000/graphql", cfg.DagsterGraphQLEndpoint)
+	assert.Equal(t, "agent:troweprice:secret-token", cfg.DagsterCloudAPIToken)
 	assert.Equal(t, 30*time.Second, cfg.DagsterScrapingInterval)
 	assert.Equal(t, 20*time.Second, cfg.DagsterScrapingTimeout)
 	assert.Equal(t, 2*time.Minute, cfg.RunsUpdatedAfterSafetyMargin)

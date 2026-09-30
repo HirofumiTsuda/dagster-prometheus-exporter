@@ -280,6 +280,22 @@ helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prom
 
 Metrics are then available at `http://localhost:9101/metrics`.
 
+### Dagster+
+
+The exporter works against a [Dagster+](https://dagster.io/plus) deployment as well as OSS Dagster. Two things differ from the OSS setup above:
+
+1. Point `DAGSTER_GRAPHQL_ENDPOINT` at your deployment's GraphQL URL, which is `https://<org>.dagster.cloud/<deployment>/graphql` (e.g. `https://acme.dagster.cloud/prod/graphql`).
+2. Set `DAGSTER_CLOUD_API_TOKEN` to a Dagster+ [API token](https://docs.dagster.io/dagster-plus/deployment/management/tokens/agent-tokens) (an agent or user token). Every request the exporter makes — the scrape queries and the `/readyz` check — then carries it as a `Dagster-Cloud-Api-Token` header, which Dagster+ requires; without it, Dagster+ rejects every call as unauthenticated. The token is read from the environment (never a CLI flag) so it isn't exposed in the process's command line.
+
+```sh
+docker run -p 9101:9101 \
+  -e DAGSTER_GRAPHQL_ENDPOINT=https://acme.dagster.cloud/prod/graphql \
+  -e DAGSTER_CLOUD_API_TOKEN=agent:acme:your-token \
+  ghcr.io/hirofumitsuda/dagster-prometheus-exporter:latest
+```
+
+`DAGSTER_CLOUD_API_TOKEN` is optional and empty by default, so leaving it unset keeps the exporter's behavior against OSS Dagster completely unchanged — no auth header is sent. One caveat: `dagster_daemon_healthy` reflects OSS daemon status; in Dagster+ the daemon is managed by the agent, so that particular metric may report differently or not apply.
+
 ### Configuration
 
 All configuration is via environment variables (see `internal/config/config.go`):
@@ -287,7 +303,8 @@ All configuration is via environment variables (see `internal/config/config.go`)
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `9101` | Port the exporter listens on. |
-| `DAGSTER_GRAPHQL_ENDPOINT` | `http://127.0.0.1:3000/graphql` | URL of the Dagster GraphQL API to poll. |
+| `DAGSTER_GRAPHQL_ENDPOINT` | `http://127.0.0.1:3000/graphql` | URL of the Dagster GraphQL API to poll. For Dagster+, use the per-deployment endpoint `https://<org>.dagster.cloud/<deployment>/graphql`. |
+| `DAGSTER_CLOUD_API_TOKEN` | _(empty)_ | Dagster+ API token. Leave unset for OSS Dagster (whose GraphQL API is unauthenticated). When set, every GraphQL request — including `/readyz` — sends it as a `Dagster-Cloud-Api-Token` header, which Dagster+ requires. See [Dagster+ usage](#dagster). |
 | `LOOKBACK_WINDOW_MINUTES` | scraping interval | How far back to look for completed runs on the very first scrape only. After that, completed runs are fetched incrementally from the last-seen update time (see [Architecture](#architecture)), so this only matters for the initial backfill on startup. |
 | `CACHE_TTL_MINUTES` | 20x the scraping interval | How long a completed run's ID is remembered, to avoid double-counting `dagster_completed_runs_total`. A still-relevant run gets touched (its TTL refreshed) on every scrape, so this really just bounds how many consecutive missed/failed scrapes are tolerated before risking a double count on recovery. |
 | `DAGSTER_SCRAPING_INTERVAL_SECONDS` | `15` | How often the exporter polls Dagster's GraphQL API. |

@@ -9,7 +9,7 @@ import (
 )
 
 func TestDagsterCollectorDescribeAndCollect(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://example.invalid", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	descCh := make(chan *prometheus.Desc, 32)
 	go func() {

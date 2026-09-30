@@ -65,7 +65,7 @@ func TestCollectDefinitionsRosterRejectsPythonErrorWithoutDiscardingState(t *tes
 	}}}`
 
 	s := newScriptedServer(t, goodRoster)
-	c := NewDagsterCollector(t.Context(), s.url, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), s.url, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 
@@ -128,7 +128,7 @@ func TestRunCollectorsRejectRunsOrErrorFailures(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScriptedServer(t, tc.body)
-			c := NewDagsterCollector(t.Context(), s.url, time.Hour, time.Hour, 500, 5*time.Minute)
+			c := NewDagsterCollector(t.Context(), s.url, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 			activeErr := CollectActiveRuns(t.Context(), c)
 			require.Error(t, activeErr, "CollectActiveRuns must not treat a failed runsOrError as zero active runs")
@@ -151,7 +151,7 @@ func TestCollectActiveRunsRejectsPythonErrorWithoutDiscardingAggregates(t *testi
 	]}}}`
 
 	s := newScriptedServer(t, goodRuns)
-	c := NewDagsterCollector(t.Context(), s.url, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), s.url, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectActiveRuns(t.Context(), c))
 	require.Len(t, c.activeRunAggregates, 1)
@@ -170,7 +170,7 @@ func TestCollectCodeLocationStatusRejectsPythonErrorWithoutDiscardingState(t *te
 	}}}`
 
 	s := newScriptedServer(t, goodWorkspace)
-	c := NewDagsterCollector(t.Context(), s.url, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), s.url, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectCodeLocationStatus(t.Context(), c))
 	require.Len(t, c.codeLocationLoadError, 1)

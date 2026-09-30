@@ -10,7 +10,7 @@ import (
 )
 
 type DagsterCollector struct {
-	dagsterGraphQLEndpoint string
+	client dagsterClient
 
 	activeRunsDesc                        *prometheus.Desc
 	completedRunsCounter                  *prometheus.CounterVec
@@ -85,10 +85,10 @@ func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cach
 	return cache
 }
 
-func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, lookbackWindow time.Duration, cacheTTL time.Duration, runsPageSize int, runsUpdatedAfterSafetyMargin time.Duration) *DagsterCollector {
+func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dagsterCloudAPIToken string, lookbackWindow time.Duration, cacheTTL time.Duration, runsPageSize int, runsUpdatedAfterSafetyMargin time.Duration) *DagsterCollector {
 	cache := newDagsterCache(ctx, cacheTTL)
 	return &DagsterCollector{
-		dagsterGraphQLEndpoint: dagsterGraphQLEndpoint,
+		client: dagsterClient{endpoint: dagsterGraphQLEndpoint, token: dagsterCloudAPIToken},
 		activeRunsDesc: prometheus.NewDesc(
 			"dagster_active_runs",
 			"Number of active runs with each status in Dagster",

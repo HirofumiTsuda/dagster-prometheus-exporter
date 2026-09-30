@@ -61,7 +61,7 @@ func CollectActiveRuns(ctx context.Context, c *DagsterCollector) error {
 	backlog := make(map[string]int)
 	now := time.Now()
 
-	err := fetchRunPages(ctx, activeStatuses, 0, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
+	err := fetchRunPages(ctx, activeStatuses, 0, c.client, c.runsPageSize, func(page []Run) error {
 		for _, run := range page {
 			key := ActiveRunKey{
 				JobName:      run.JobName,

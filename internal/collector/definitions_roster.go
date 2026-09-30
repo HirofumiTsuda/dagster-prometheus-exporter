@@ -35,7 +35,7 @@ func buildKnownJobs(resp *GraphQLDefinitionsRosterResponse) map[JobKey]struct{} 
 func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	req := getDefinitionsRosterRequest()
 
-	resp, err := getDefinitionsRoster(ctx, req, c.dagsterGraphQLEndpoint)
+	resp, err := getDefinitionsRoster(ctx, req, c.client)
 	if err != nil {
 		log.Printf("failed to collect definitions roster from dagster: %v", err)
 		return err

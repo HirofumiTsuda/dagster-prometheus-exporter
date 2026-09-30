@@ -30,7 +30,7 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 
 	var maxUpdateTimeSeen float64
 
-	err := fetchRunPages(ctx, completedStatuses, updatedAfter, c.dagsterGraphQLEndpoint, c.runsPageSize, func(page []Run) error {
+	err := fetchRunPages(ctx, completedStatuses, updatedAfter, c.client, c.runsPageSize, func(page []Run) error {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
 

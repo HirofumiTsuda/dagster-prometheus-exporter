@@ -16,7 +16,7 @@ import (
 func CollectCodeLocationStatus(ctx context.Context, c *DagsterCollector) error {
 	req := getWorkspaceStatusRequest()
 
-	resp, err := getWorkspaceStatus(ctx, req, c.dagsterGraphQLEndpoint)
+	resp, err := getWorkspaceStatus(ctx, req, c.client)
 	if err != nil {
 		log.Printf("failed to collect code location status from dagster: %v", err)
 		return err

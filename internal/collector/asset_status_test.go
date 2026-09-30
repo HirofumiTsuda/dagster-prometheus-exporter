@@ -68,7 +68,7 @@ func TestCollectAssetStatusDistinguishesNeverRunFromFailed(t *testing.T) {
 		}
 	}`
 	ts := assetStatusServer(t, nodesBody, latestInfoBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 
@@ -98,7 +98,7 @@ func TestCollectAssetStatusJoinsMultiSegmentAssetKeys(t *testing.T) {
 		}
 	}`
 	ts := assetStatusServer(t, nodesBody, latestInfoBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 
@@ -124,7 +124,7 @@ func TestCollectAssetStatusHandlesNullStaleStatus(t *testing.T) {
 		}
 	}`
 	ts := assetStatusServer(t, nodesBody, latestInfoBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 
@@ -150,7 +150,7 @@ func TestCollectAssetStatusSkipsLatestInfoQueryWhenNoAssetsDefined(t *testing.T)
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 	assert.Empty(t, c.assetStatus)
@@ -168,7 +168,7 @@ func TestCollectAssetStatusReturnsErrorOnGraphQLError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	err := CollectAssetStatus(t.Context(), c)
 	require.Error(t, err)
@@ -176,7 +176,7 @@ func TestCollectAssetStatusReturnsErrorOnGraphQLError(t *testing.T) {
 }
 
 func TestReflectAssetStatus(t *testing.T) {
-	c := NewDagsterCollector(t.Context(), "http://unused", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), "http://unused", "", time.Hour, time.Hour, 500, 5*time.Minute)
 	c.assetStatus = map[string]assetStatusEntry{
 		"good_asset":      {staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100},
 		"never_run_asset": {staleStatus: "MISSING", lastMaterializationStatus: ""},

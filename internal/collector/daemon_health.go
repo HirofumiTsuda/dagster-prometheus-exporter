@@ -41,7 +41,7 @@ type daemonHealthEntry struct {
 func CollectDaemonHealth(ctx context.Context, c *DagsterCollector) error {
 	req := getDaemonHealthRequest()
 
-	resp, err := getDaemonHealth(ctx, req, c.dagsterGraphQLEndpoint)
+	resp, err := getDaemonHealth(ctx, req, c.client)
 	if err != nil {
 		log.Printf("failed to collect daemon health from dagster: %v", err)
 		return err

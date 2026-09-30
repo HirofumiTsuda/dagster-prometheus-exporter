@@ -37,7 +37,7 @@ var descFqNameRe = regexp.MustCompile(`fqName: "([^"]+)"`)
 // in-memory map behind a per-asset/per-job/per-schedule metric starts
 // empty.
 func TestListMetricNames(t *testing.T) {
-	c := collector.NewDagsterCollector(t.Context(), "http://unused", time.Hour, time.Hour, 500, 5*time.Minute)
+	c := collector.NewDagsterCollector(t.Context(), "http://unused", "", time.Hour, time.Hour, 500, 5*time.Minute)
 	b := newBuildInfoGauge("test-version", "test-commit")
 
 	ch := make(chan *prometheus.Desc, 32)

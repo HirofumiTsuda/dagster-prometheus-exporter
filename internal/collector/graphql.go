@@ -60,26 +60,53 @@ type graphQLResponse interface {
 	err() error
 }
 
-// doGraphQL posts request to endpoint and decodes the reply into out, in the
-// same shape as json.Unmarshal: the caller owns the destination value and
-// passes a pointer to it.
+// dagsterClient bundles everything doGraphQL needs to reach one Dagster
+// instance: its GraphQL endpoint and, for Dagster+, an API token. These two
+// always travel together — a Dagster+ endpoint is useless without the token,
+// and the token is meaningless without knowing which endpoint to send it to
+// — so they're passed as one value through every get* wrapper rather than as
+// two parallel parameters that could drift apart.
+//
+// The zero value (empty endpoint, empty token) is not usable; construct one
+// with the endpoint set. A blank Token means "no authentication", which is
+// exactly right for OSS Dagster.
+type dagsterClient struct {
+	endpoint string
+	token    string
+}
+
+// dagsterCloudAPITokenHeader is the HTTP header Dagster+ authenticates
+// requests with. OSS Dagster ignores it, so sending it there is harmless —
+// but doGraphQL only sets it when a token is actually configured, to keep the
+// OSS request byte-for-byte unchanged.
+const dagsterCloudAPITokenHeader = "Dagster-Cloud-Api-Token"
+
+// doGraphQL posts request to client.endpoint and decodes the reply into out,
+// in the same shape as json.Unmarshal: the caller owns the destination value
+// and passes a pointer to it.
 //
 // Every query goes through here so that transport-level policy — the
 // context-controlled timeout, the status-code check, the top-level "errors"
-// check — is defined once. It used to be copied into a separate 36-line
-// function per query, and that duplication is exactly how the union checks
-// in issue #69 came to exist in one copy but not the others.
-func doGraphQL(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string, out graphQLResponse) error {
+// check, and the Dagster+ auth header — is defined once. It used to be copied
+// into a separate 36-line function per query, and that duplication is exactly
+// how the union checks in issue #69 came to exist in one copy but not the
+// others.
+func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClient, out graphQLResponse) error {
 	jsonBytes, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("failed to marshal graphql request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dagsterGraphQLEndpoint, bytes.NewBuffer(jsonBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, client.endpoint, bytes.NewBuffer(jsonBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create http request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	// Only sent when configured: an empty token means OSS Dagster, where the
+	// header is unnecessary, and omitting it keeps the OSS request unchanged.
+	if client.token != "" {
+		httpReq.Header.Set(dagsterCloudAPITokenHeader, client.token)
+	}
 
 	resp, err := graphQLClient.Do(httpReq)
 	if err != nil {
@@ -227,12 +254,12 @@ func getRunsRequest(statuses []string, updateAfter float64, cursor string, limit
 // The cursor Dagster expects is simply the runId of the last run already
 // seen (not an opaque token) — see
 // https://github.com/dagster-io/dagster/issues/31024#issuecomment-5126177124.
-func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, dagsterGraphQLEndpoint string, pageSize int, onPage func([]Run) error) error {
+func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, client dagsterClient, pageSize int, onPage func([]Run) error) error {
 	cursor := ""
 
 	for {
 		req := getRunsRequest(statuses, updateAfter, cursor, pageSize)
-		resp, err := getRuns(ctx, req, dagsterGraphQLEndpoint)
+		resp, err := getRuns(ctx, req, client)
 		if err != nil {
 			return err
 		}
@@ -255,9 +282,9 @@ func fetchRunPages(ctx context.Context, statuses []string, updateAfter float64, 
 	}
 }
 
-func getRuns(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLRunsResponse, error) {
+func getRuns(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLRunsResponse, error) {
 	var resp GraphQLRunsResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -327,9 +354,9 @@ func getDefinitionsRosterRequest() *GraphQLRequest {
 	}
 }
 
-func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDefinitionsRosterResponse, error) {
+func getDefinitionsRoster(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLDefinitionsRosterResponse, error) {
 	var resp GraphQLDefinitionsRosterResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -368,9 +395,9 @@ func getWorkspaceStatusRequest() *GraphQLRequest {
 	}
 }
 
-func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLWorkspaceStatusResponse, error) {
+func getWorkspaceStatus(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLWorkspaceStatusResponse, error) {
 	var resp GraphQLWorkspaceStatusResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -416,9 +443,9 @@ func getDaemonHealthRequest() *GraphQLRequest {
 	}
 }
 
-func getDaemonHealth(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLDaemonHealthResponse, error) {
+func getDaemonHealth(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLDaemonHealthResponse, error) {
 	var resp GraphQLDaemonHealthResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -460,9 +487,9 @@ func getAssetNodesRequest() *GraphQLRequest {
 	}
 }
 
-func getAssetNodes(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLAssetNodesResponse, error) {
+func getAssetNodes(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLAssetNodesResponse, error) {
 	var resp GraphQLAssetNodesResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -515,9 +542,9 @@ func getAssetsLatestInfoRequest(assetKeys []AssetKeyPath) *GraphQLRequest {
 	}
 }
 
-func getAssetsLatestInfo(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLAssetsLatestInfoResponse, error) {
+func getAssetsLatestInfo(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLAssetsLatestInfoResponse, error) {
 	var resp GraphQLAssetsLatestInfoResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -564,9 +591,9 @@ func getConcurrencyLimitsRequest() *GraphQLRequest {
 	}
 }
 
-func getConcurrencyLimits(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLConcurrencyLimitsResponse, error) {
+func getConcurrencyLimits(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLConcurrencyLimitsResponse, error) {
 	var resp GraphQLConcurrencyLimitsResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 
@@ -591,9 +618,14 @@ func GetVersionRequest() *GraphQLRequest {
 	}
 }
 
-func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint string) (*GraphQLVersionResponse, error) {
+// GetVersion is the exported entry the readiness handler uses. It takes the
+// endpoint and (optional) Dagster+ token as plain strings rather than the
+// unexported dagsterClient, so package server can call it without reaching
+// into this package's internals; the client is assembled here.
+func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndpoint, dagsterCloudAPIToken string) (*GraphQLVersionResponse, error) {
+	client := dagsterClient{endpoint: dagsterGraphQLEndpoint, token: dagsterCloudAPIToken}
 	var resp GraphQLVersionResponse
-	if err := doGraphQL(ctx, request, dagsterGraphQLEndpoint, &resp); err != nil {
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
 		return nil, err
 	}
 

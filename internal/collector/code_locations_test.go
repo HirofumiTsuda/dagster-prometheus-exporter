@@ -31,7 +31,7 @@ func TestCollectCodeLocationStatusReportsPerLocationErrors(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectCodeLocationStatus(t.Context(), c))
 
@@ -75,7 +75,7 @@ func TestCollectCodeLocationStatusReturnsErrorOnWorkspaceLoadError(t *testing.T)
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	err := CollectCodeLocationStatus(t.Context(), c)
 	assert.Error(t, err)
@@ -88,7 +88,7 @@ func TestCollectCodeLocationStatusReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectCodeLocationStatus(t.Context(), c))
 }

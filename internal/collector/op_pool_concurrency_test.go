@@ -43,7 +43,7 @@ func concurrencyLimitsServer(t *testing.T, body string) *httptest.Server {
 
 func TestCollectOpPoolConcurrency(t *testing.T) {
 	ts := concurrencyLimitsServer(t, concurrencyLimitsBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	require.NoError(t, CollectOpPoolConcurrency(t.Context(), c))
 
@@ -76,12 +76,12 @@ func TestCollectOpPoolConcurrencyReplacesMapWholesale(t *testing.T) {
 	// reporting an idle pool at zero, and should never itself zero-fill or
 	// retain a pool that Dagster has stopped returning.
 	ts := concurrencyLimitsServer(t, concurrencyLimitsBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectOpPoolConcurrency(t.Context(), c))
 	require.Contains(t, c.opPoolConcurrency, "db_pool")
 
 	ts2 := concurrencyLimitsServer(t, `{"data": {"instance": {"concurrencyLimits": []}}}`)
-	c.dagsterGraphQLEndpoint = ts2.URL
+	c.client.endpoint = ts2.URL
 	require.NoError(t, CollectOpPoolConcurrency(t.Context(), c))
 
 	assert.Empty(t, c.opPoolConcurrency)
@@ -89,7 +89,7 @@ func TestCollectOpPoolConcurrencyReplacesMapWholesale(t *testing.T) {
 
 func TestReflectOpPoolConcurrencyMetrics(t *testing.T) {
 	ts := concurrencyLimitsServer(t, concurrencyLimitsBody)
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	require.NoError(t, CollectOpPoolConcurrency(t.Context(), c))
 
 	ch := make(chan prometheus.Metric, 32)
@@ -145,6 +145,6 @@ func TestCollectOpPoolConcurrencyReturnsErrorOnServerError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewDagsterCollector(t.Context(), ts.URL, time.Hour, time.Hour, 500, 5*time.Minute)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	assert.Error(t, CollectOpPoolConcurrency(t.Context(), c))
 }

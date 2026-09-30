@@ -60,7 +60,7 @@ type opPoolConcurrencyEntry struct {
 func CollectOpPoolConcurrency(ctx context.Context, c *DagsterCollector) error {
 	req := getConcurrencyLimitsRequest()
 
-	resp, err := getConcurrencyLimits(ctx, req, c.dagsterGraphQLEndpoint)
+	resp, err := getConcurrencyLimits(ctx, req, c.client)
 	if err != nil {
 		log.Printf("failed to collect op pool concurrency from dagster: %v", err)
 		return err

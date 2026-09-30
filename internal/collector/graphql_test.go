@@ -95,7 +95,7 @@ func TestGetRuns(t *testing.T) {
 
 	req := getRunsRequest([]string{"STARTED"}, 0.0, "", 500)
 
-	resp, err := getRuns(t.Context(), req, ts.URL)
+	resp, err := getRuns(t.Context(), req, dagsterClient{endpoint: ts.URL})
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -129,7 +129,7 @@ func TestGetRunsRespectsContextTimeout(t *testing.T) {
 	req := getRunsRequest(nil, 0.0, "", 500)
 
 	start := time.Now()
-	_, err := getRuns(ctx, req, ts.URL)
+	_, err := getRuns(ctx, req, dagsterClient{endpoint: ts.URL})
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -143,10 +143,51 @@ func TestGetRunsWithServerError(t *testing.T) {
 	defer ts.Close()
 
 	req := getRunsRequest(nil, 0.0, "", 500)
-	response, err := getRuns(t.Context(), req, ts.URL)
+	response, err := getRuns(t.Context(), req, dagsterClient{endpoint: ts.URL})
 
 	assert.Error(t, err)
 	assert.Nil(t, response)
+}
+
+// The Dagster+ auth header is the whole point of the token: it must be sent
+// verbatim when configured, and must be entirely absent (not empty-valued)
+// when it isn't, so the OSS request stays byte-for-byte what it always was.
+func TestDoGraphQLSetsAuthHeaderOnlyWhenTokenIsSet(t *testing.T) {
+	tests := []struct {
+		name       string
+		token      string
+		wantHeader string
+		wantSet    bool
+	}{
+		{name: "token configured (Dagster+)", token: "agent:troweprice:secret", wantHeader: "agent:troweprice:secret", wantSet: true},
+		{name: "no token (OSS)", token: "", wantSet: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotHeader string
+			var headerPresent bool
+
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotHeader = r.Header.Get(dagsterCloudAPITokenHeader)
+				_, headerPresent = r.Header[dagsterCloudAPITokenHeader]
+				// Content-Type must always be sent regardless of auth.
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte(`{"data": {"version": "1.13.15"}}`))
+				assert.NoError(t, err)
+			}))
+			defer ts.Close()
+
+			_, err := GetVersion(t.Context(), GetVersionRequest(), ts.URL, tc.token)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.wantSet, headerPresent,
+				"the auth header should be present exactly when a token is configured")
+			assert.Equal(t, tc.wantHeader, gotHeader)
+		})
+	}
 }
 
 // makeRunsPage builds n runs named run_<offset>..run_<offset+n-1>, for use
@@ -192,7 +233,7 @@ func TestFetchRunPagesPaginatesUntilAShortPage(t *testing.T) {
 	defer ts.Close()
 
 	var got []Run
-	err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, ts.URL, pageSize, func(page []Run) error {
+	err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, dagsterClient{endpoint: ts.URL}, pageSize, func(page []Run) error {
 		got = append(got, page...)
 		return nil
 	})
@@ -226,7 +267,7 @@ func TestFetchRunPagesStopsOnAnEmptyPageWhateverThePageSize(t *testing.T) {
 
 			pages := 0
 			require.NotPanics(t, func() {
-				err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, ts.URL, pageSize, func(page []Run) error {
+				err := fetchRunPages(t.Context(), []string{"SUCCESS"}, 0, dagsterClient{endpoint: ts.URL}, pageSize, func(page []Run) error {
 					pages++
 					return nil
 				})
@@ -249,19 +290,19 @@ func TestGraphQLTopLevelErrorsAreReported(t *testing.T) {
 
 	queries := map[string]func(ctx context.Context, endpoint string) error{
 		"runsOrError": func(ctx context.Context, endpoint string) error {
-			_, err := getRuns(ctx, getRunsRequest([]string{"SUCCESS"}, 0, "", 500), endpoint)
+			_, err := getRuns(ctx, getRunsRequest([]string{"SUCCESS"}, 0, "", 500), dagsterClient{endpoint: endpoint})
 			return err
 		},
 		"repositoriesOrError": func(ctx context.Context, endpoint string) error {
-			_, err := getDefinitionsRoster(ctx, getDefinitionsRosterRequest(), endpoint)
+			_, err := getDefinitionsRoster(ctx, getDefinitionsRosterRequest(), dagsterClient{endpoint: endpoint})
 			return err
 		},
 		"workspaceOrError": func(ctx context.Context, endpoint string) error {
-			_, err := getWorkspaceStatus(ctx, getWorkspaceStatusRequest(), endpoint)
+			_, err := getWorkspaceStatus(ctx, getWorkspaceStatusRequest(), dagsterClient{endpoint: endpoint})
 			return err
 		},
 		"version": func(ctx context.Context, endpoint string) error {
-			_, err := GetVersion(ctx, GetVersionRequest(), endpoint)
+			_, err := GetVersion(ctx, GetVersionRequest(), endpoint, "")
 			return err
 		},
 	}
