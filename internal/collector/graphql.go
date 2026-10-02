@@ -68,7 +68,7 @@ type graphQLResponse interface {
 // two parallel parameters that could drift apart.
 //
 // The zero value (empty endpoint, empty token) is not usable; construct one
-// with the endpoint set. A blank Token means "no authentication", which is
+// with the endpoint set. A blank token means "no authentication", which is
 // exactly right for OSS Dagster.
 type dagsterClient struct {
 	endpoint string
