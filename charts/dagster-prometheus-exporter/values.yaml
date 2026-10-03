@@ -36,6 +36,20 @@ env: {}
   # RUNS_PAGE_SIZE: "500"
   # RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES: "5"
 
+# Dagster+ API token, read from a Secret you create yourself, e.g.
+#   kubectl create secret generic dagster-cloud-api-token --from-literal=token=<token>
+# and passed to the exporter as DAGSTER_CLOUD_API_TOKEN. Leave existingSecret
+# empty for OSS Dagster.
+#
+# Don't put the token in env above instead: env is rendered into a ConfigMap,
+# which stores it in plain text. The chart deliberately has no option to
+# create the Secret from a value here either, since that would just move the
+# plain-text token into the values file. Setting both is rejected at render
+# time.
+dagsterCloudApiToken:
+  existingSecret: ""
+  key: token
+
 resources: {}
 
 podAnnotations: {}

@@ -31,7 +31,9 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `image.tag` | `""` (chart's `appVersion`) | Image tag override. |
 | `port` | `9101` | Single source of truth for the container port, Service port, and the `PORT` env var. |
 | `service.type` | `ClusterIP` | Kubernetes Service type. |
-| `env` | `{}` | Environment variables passed to the exporter via a ConfigMap (`envFrom`). Keys match `internal/config/config.go` exactly. |
+| `env` | `{}` | Environment variables passed to the exporter via a ConfigMap (`envFrom`). Keys match `internal/config/config.go` exactly. Don't put `DAGSTER_CLOUD_API_TOKEN` here; use `dagsterCloudApiToken` below. |
+| `dagsterCloudApiToken.existingSecret` | `""` | Name of a Secret holding a Dagster+ API token, passed to the exporter as `DAGSTER_CLOUD_API_TOKEN`. Leave empty for OSS Dagster. See [Dagster+](#dagster). |
+| `dagsterCloudApiToken.key` | `token` | Key within that Secret. |
 | `resources` | `{}` | Standard pod resource requests/limits. |
 | `podAnnotations` / `podLabels` | `{}` | Extra pod metadata. |
 | `nodeSelector` | `{}` | Node labels the pod must match to be scheduled. |
@@ -44,6 +46,24 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `alerts.additionalLabels` | `{}` | Extra labels on the `PrometheusRule` object itself, e.g. for a Prometheus `ruleSelector`. |
 | `alerts.rules.<name>` | see `values.yaml` | A complete Prometheus alerting rule (`enabled`/`alert`/`expr`/`for`/`labels`/`annotations`), keyed by name. See below for overriding or adding one. |
 | `nameOverride` / `fullnameOverride` | `""` | Override the chart's computed resource name. |
+
+### Dagster+
+
+Dagster+ needs an API token on every request. Create a Secret holding it, then point the chart at it:
+
+```sh
+kubectl create secret generic dagster-cloud-api-token --from-literal=token=<your token>
+
+helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
+  --set env.DAGSTER_GRAPHQL_ENDPOINT=https://<org>.dagster.cloud/<deployment>/graphql \
+  --set dagsterCloudApiToken.existingSecret=dagster-cloud-api-token \
+  --set env.DAGSTER_SCRAPING_TIMEOUT_SECONDS=60 \
+  --set env.DAGSTER_SCRAPING_INTERVAL_SECONDS=90
+```
+
+The token is injected with `secretKeyRef`, so it never lands in the chart's ConfigMap. The chart has no option to create the Secret from a value in `values.yaml`, since that would just move the plain-text token into the values file. Secrets managed by External Secrets, Sealed Secrets, or similar work the same way, as long as the resulting Secret has the configured key. Setting `env.DAGSTER_CLOUD_API_TOKEN` as well is rejected at render time.
+
+See the main README's [Dagster+ section](../../README.md#dagster) for the endpoint format and why the timeout is raised.
 
 ### Alerts (`alerts.enabled`)
 
@@ -77,3 +97,4 @@ alerts:
 
 - `readinessProbe`/`livenessProbe` are set to `/healthz`, not `/readyz` — `/healthz` doesn't depend on Dagster connectivity, so a Dagster outage doesn't pull the exporter pod out of the Service's endpoints. Doing so would stop Prometheus from scraping it at all, defeating the point of the exporter continuing to serve last-known state during an outage (see the main README's Motivation section).
 - A `checksum/config` pod annotation triggers a rollout whenever `env` changes, since `envFrom`-injected variables are otherwise only read once at container start.
+- That checksum doesn't cover the Secret referenced by `dagsterCloudApiToken.existingSecret`. After rotating the token, restart the pod (`kubectl rollout restart deployment/<name>`) or use a tool like Reloader.

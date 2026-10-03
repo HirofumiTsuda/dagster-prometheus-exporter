@@ -32,6 +32,19 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "dagster-prometheus-exporter.fullname" . }}
+          {{- with .Values.dagsterCloudApiToken.existingSecret }}
+          {{- if hasKey $.Values.env "DAGSTER_CLOUD_API_TOKEN" }}
+          {{- fail "set the Dagster+ token via dagsterCloudApiToken.existingSecret or env.DAGSTER_CLOUD_API_TOKEN, not both (env stores it in a plain-text ConfigMap)" }}
+          {{- end }}
+          # Not covered by checksum/config above: rotating the token in the
+          # Secret needs a manual rollout (or a tool like Reloader).
+          env:
+            - name: DAGSTER_CLOUD_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.dagsterCloudApiToken.key }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.port }}

@@ -65,4 +65,14 @@ jobs:
             --set-json 'affinity={"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"kubernetes.io/arch","operator":"In","values":["amd64"]}]}]}}}' \
             --set alerts.enabled=true \
             --set alerts.rules.sensorTickStale.for=10m \
-            --set alerts.rules.daemonHeartbeatStale.enabled=false
+            --set alerts.rules.daemonHeartbeatStale.enabled=false \
+            --set dagsterCloudApiToken.existingSecret=dagster-cloud-api-token
+
+      - name: Reject a Dagster+ token set both via a Secret and in env
+        run: |
+          if helm template charts/dagster-prometheus-exporter \
+            --set dagsterCloudApiToken.existingSecret=dagster-cloud-api-token \
+            --set env.DAGSTER_CLOUD_API_TOKEN=plain-text >/dev/null 2>&1; then
+            echo "::error::Rendering with both dagsterCloudApiToken.existingSecret and env.DAGSTER_CLOUD_API_TOKEN should fail" >&2
+            exit 1
+          fi
