@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -149,6 +151,30 @@ func TestGetRunsWithServerError(t *testing.T) {
 	assert.Nil(t, response)
 }
 
+func TestDoGraphQLDoesNotForwardTokenOnRedirect(t *testing.T) {
+	for _, code := range []int{http.StatusFound, http.StatusTemporaryRedirect} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			var hits atomic.Int32
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+			}))
+			defer target.Close()
+
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, target.URL+"/graphql", code)
+			}))
+			defer origin.Close()
+
+			_, err := GetVersion(t.Context(), GetVersionRequest(), origin.URL, "agent:acme:secret")
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, strconv.Itoa(code))
+			assert.ErrorContains(t, err, target.URL+"/graphql", "the error should say where the redirect pointed")
+			assert.Zero(t, hits.Load(), "the redirect target must never be contacted")
+		})
+	}
+}
+
 // The Dagster+ auth header is the whole point of the token: it must be sent
 // verbatim when configured, and must be entirely absent (not empty-valued)
 // when it isn't, so the OSS request stays byte-for-byte what it always was.
@@ -159,7 +185,7 @@ func TestDoGraphQLSetsAuthHeaderOnlyWhenTokenIsSet(t *testing.T) {
 		wantHeader string
 		wantSet    bool
 	}{
-		{name: "token configured (Dagster+)", token: "agent:troweprice:secret", wantHeader: "agent:troweprice:secret", wantSet: true},
+		{name: "token configured (Dagster+)", token: "agent:acme:secret", wantHeader: "agent:acme:secret", wantSet: true},
 		{name: "no token (OSS)", token: "", wantSet: false},
 	}
 

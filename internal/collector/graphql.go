@@ -30,7 +30,20 @@ func closeBody(body io.Closer) {
 // may run through the context they pass (see http.NewRequestWithContext in
 // doGraphQL). Setting it here would silently cap the per-scrape deadline
 // that DAGSTER_SCRAPING_TIMEOUT_SECONDS is supposed to own.
-var graphQLClient = &http.Client{}
+var graphQLClient = &http.Client{
+	// Never follow redirects: the client would forward Dagster-Cloud-Api-Token
+	// to whatever host the redirect points at. A GraphQL endpoint has no reason
+	// to redirect, so the 3xx is returned as-is and doGraphQL reports it as an
+	// unexpected status code, along with where it pointed.
+	//
+	// Same-host redirects are refused too, including http:// -> https://.
+	// Dagster+ answers an http:// endpoint with a 307 to https://, and
+	// following it would hide that the first request already sent the token
+	// in plain text. Failing makes that misconfiguration visible instead.
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 // graphQLErrors is embedded in every response type to carry GraphQL's
 // top-level "errors" array. Embedding keeps the field promoted to the top
@@ -115,6 +128,13 @@ func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClien
 	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		// graphQLClient doesn't follow redirects, so say where this one
+		// pointed: the usual cause is an http:// endpoint whose server
+		// redirects to https://, and the fix is to configure that URL.
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			return fmt.Errorf("unexpected status code: %d (redirect to %q; set DAGSTER_GRAPHQL_ENDPOINT to that URL)",
+				resp.StatusCode, resp.Header.Get("Location"))
+		}
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
