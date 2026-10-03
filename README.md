@@ -274,7 +274,7 @@ Or deploy to Kubernetes with the [Helm chart](charts/dagster-prometheus-exporter
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.6 \
+  --version 0.1.9 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
@@ -303,7 +303,7 @@ A few Dagster+ specifics worth knowing:
 
 - **Daemon health:** `dagster_daemon_healthy` works on Dagster+ and reports every daemon type. Only its companion `dagster_daemon_last_heartbeat_timestamp_seconds` is absent, because Dagster+ returns a null `lastHeartbeatTime` for agent-managed daemons and the exporter omits the series rather than emitting a zero.
 - **`/readyz` version:** on Dagster+ the `version` field in the `/readyz` response body is an internal build hash (e.g. `80a3a302`), not a Dagster release number like `1.13.15`. The readiness check itself is unaffected — this only matters if you were reading that value expecting a semver.
-- **Helm:** put the token in a Kubernetes `Secret` and set `dagsterCloudApiToken.existingSecret` to its name; see the chart README's [Dagster+ section](charts/dagster-prometheus-exporter/README.md#dagster). Don't set `env.DAGSTER_CLOUD_API_TOKEN`: `env.*` is rendered into a `ConfigMap`, which would store the token in plain text. This needs a chart release newer than 0.1.8; with 0.1.8 or older, `env` is the only way in.
+- **Helm:** put the token in a Kubernetes `Secret` and set `dagsterCloudApiToken.existingSecret` to its name; see the chart README's [Dagster+ section](charts/dagster-prometheus-exporter/README.md#dagster). Don't set `env.DAGSTER_CLOUD_API_TOKEN`: `env.*` is rendered into a `ConfigMap`, which would store the token in plain text. This needs chart 0.1.9 or newer; with 0.1.8 or older, `env` is the only way in.
 
 ### Configuration
 
