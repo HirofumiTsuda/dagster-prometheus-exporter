@@ -5,6 +5,7 @@
 [![Helm e2e](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-e2e.yml)
 [![Published chart smoke test](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-published-smoke.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/helm-published-smoke.yml)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dagster-prometheus-exporter)](https://artifacthub.io/packages/helm/dagster-prometheus-exporter/dagster-prometheus-exporter)
+[![Grafana dashboard](https://img.shields.io/badge/Grafana%20dashboard-25815-F46800?logo=grafana&logoColor=white)](https://grafana.com/grafana/dashboards/25815-dagster-run-monitoring/)
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
 [![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
