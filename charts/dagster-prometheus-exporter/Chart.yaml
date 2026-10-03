@@ -16,6 +16,7 @@ maintainers:
     url: https://github.com/HirofumiTsuda
 keywords:
   - dagster
+  - dagster-plus
   - prometheus
   - monitoring
   - observability
