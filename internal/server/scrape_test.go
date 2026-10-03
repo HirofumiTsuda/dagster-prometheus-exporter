@@ -19,9 +19,10 @@ func TestScrapeDagsterHonorsContextTimeoutWhenRunningConcurrently(t *testing.T) 
 	unblock := make(chan struct{})
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Never respond in time. All three collectors hit this same
-		// endpoint concurrently, so this also proves ctx cancellation is
-		// honored by every one of them at once, not just the first.
+		// Never respond in time. Every collector scrapeDagster spawns hits
+		// this same endpoint concurrently, so this also proves ctx
+		// cancellation is honored by every one of them at once, not just
+		// the first.
 		<-unblock
 	}))
 	// unblock must be closed before ts.Close(), since Close() waits for the
