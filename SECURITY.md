@@ -16,4 +16,4 @@ Only the latest released version (`v*` tag / `latest` Docker/Helm tag) is suppor
 
 ## Scope
 
-This exporter reads from Dagster's GraphQL API (`DAGSTER_GRAPHQL_ENDPOINT`) and exposes a `/metrics` endpoint; it doesn't hold credentials beyond that endpoint URL and doesn't write to Dagster. Reports involving how it's deployed (e.g. the Helm chart's default RBAC/network exposure) are in scope alongside the Go binary itself.
+This exporter reads from Dagster's GraphQL API (`DAGSTER_GRAPHQL_ENDPOINT`) and exposes a `/metrics` endpoint; it doesn't write to Dagster. The only credential it holds is the optional Dagster+ API token (`DAGSTER_CLOUD_API_TOKEN`), which it sends as a header on GraphQL requests to that endpoint. Anything that could expose that token is in scope: logs, error messages, `/metrics` or `/readyz` output, requests sent anywhere other than the configured endpoint, or the Helm chart storing it somewhere readable. Reports involving how it's deployed (e.g. the Helm chart's default RBAC/network exposure) are in scope alongside the Go binary itself.
