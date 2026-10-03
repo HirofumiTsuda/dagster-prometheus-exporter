@@ -85,7 +85,7 @@ flowchart LR
     Grafana -- query --> Prometheus
 ```
 
-A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Six collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status) run concurrently on every scrape.
+A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Seven collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, op pool concurrency) run concurrently on every scrape.
 
 For the package layout, why there are six separate collectors, and how completed-run fetching stays incremental instead of re-scanning everything every cycle, see [docs/architecture.md](docs/architecture.md).
 
@@ -286,7 +286,7 @@ The exporter works against a [Dagster+](https://dagster.io/plus) deployment as w
 
 1. Point `DAGSTER_GRAPHQL_ENDPOINT` at your deployment's GraphQL URL, which is `https://<org>.dagster.cloud/<deployment>/graphql` (e.g. `https://acme.dagster.cloud/prod/graphql`).
 2. Set `DAGSTER_CLOUD_API_TOKEN` to a Dagster+ [API token](https://docs.dagster.io/dagster-plus/deployment/management/tokens/agent-tokens) (an agent or user token). Every request the exporter makes — the scrape queries and the `/readyz` check — then carries it as a `Dagster-Cloud-Api-Token` header, which Dagster+ requires; without it, Dagster+ rejects every call as unauthenticated. The token is read from the environment (never a CLI flag) so it isn't exposed in the process's command line.
-3. Raise `DAGSTER_SCRAPING_TIMEOUT_SECONDS` well above its `10` default (and `DAGSTER_SCRAPING_INTERVAL_SECONDS` with it). Dagster+ GraphQL latency is higher than a local OSS webserver, and the two heaviest collectors (`asset_status` and `definitions_roster`) can take tens of seconds: against a large production deployment `asset_status` was measured around 46s, and even a tiny trial deployment hit the 10s default more than once over ~25 minutes. `60`/`90` (timeout/interval) is a reasonable starting point — keep the interval ≥ the timeout so a slow scrape doesn't overlap the next tick. A collector that does time out fails in isolation and is reported via `dagster_exporter_last_scrape_success`; the others still serve their last-known state.
+3. Raise `DAGSTER_SCRAPING_TIMEOUT_SECONDS` well above its `10` default (and `DAGSTER_SCRAPING_INTERVAL_SECONDS` with it). Dagster+ GraphQL latency is higher than a local OSS webserver, and the two heaviest collectors (`asset_status` and `definitions_roster`) can take tens of seconds: against a large production deployment `asset_status` was measured around 46s, and even a tiny trial deployment hit the 10s default more than once over ~25 minutes. `60`/`90` (timeout/interval) is a reasonable starting point. Scrapes never overlap: the next one only starts after the current one finishes, so a timeout longer than the interval just stretches the effective interval instead of polling on schedule. A collector that times out fails in isolation and is reported via `dagster_exporter_last_scrape_success`; it keeps serving its last-known state, while the collectors that finished in time serve fresh data.
 
 ```sh
 docker run -p 9101:9101 \
@@ -317,7 +317,7 @@ All configuration is via environment variables (see `internal/config/config.go`)
 | `LOOKBACK_WINDOW_MINUTES` | scraping interval | How far back to look for completed runs on the very first scrape only. After that, completed runs are fetched incrementally from the last-seen update time (see [Architecture](#architecture)), so this only matters for the initial backfill on startup. |
 | `CACHE_TTL_MINUTES` | 20x the scraping interval | How long a completed run's ID is remembered, to avoid double-counting `dagster_completed_runs_total`. A still-relevant run gets touched (its TTL refreshed) on every scrape, so this really just bounds how many consecutive missed/failed scrapes are tolerated before risking a double count on recovery. |
 | `DAGSTER_SCRAPING_INTERVAL_SECONDS` | `15` | How often the exporter polls Dagster's GraphQL API. |
-| `DAGSTER_SCRAPING_TIMEOUT_SECONDS` | `10` | Timeout for a full scrape cycle (all three collectors, run concurrently). |
+| `DAGSTER_SCRAPING_TIMEOUT_SECONDS` | `10` | Timeout for a full scrape cycle (all seven collectors, run concurrently). |
 | `RUNS_PAGE_SIZE` | `500` | Max runs requested per GraphQL call; larger result sets are paged through via cursor. |
 | `RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES` | `5` | Overlap subtracted from the incremental fetch watermark, to tolerate runs whose DB commit lands slightly after their `updateTime`. |
 
