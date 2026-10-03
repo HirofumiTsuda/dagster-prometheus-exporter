@@ -329,7 +329,9 @@ If you're running the exporter directly on the host (not via `docker compose`) a
 
 ### Importing the dashboard manually
 
-If you already have your own Grafana/Prometheus and just want the dashboard, import the JSON directly:
+If you already have your own Grafana/Prometheus and just want the dashboard, the quickest way is to import it from grafana.com: it's published as [Dagster Run Monitoring (ID 25815)](https://grafana.com/grafana/dashboards/25815-dagster-run-monitoring/). In Grafana, go to **Dashboards → New → Import**, enter `25815`, and pick the Prometheus data source that scrapes this exporter.
+
+Or import the JSON from this repository:
 
 1. In Grafana, go to **Dashboards → New → Import**.
 2. Upload (or paste the contents of) [`dev/grafana/dashboards/dagster-dashboard.json`](dev/grafana/dashboards/dagster-dashboard.json) -- works as-is if you have a single, default Prometheus data source configured (same assumption this repo's own `docker compose` stack makes).

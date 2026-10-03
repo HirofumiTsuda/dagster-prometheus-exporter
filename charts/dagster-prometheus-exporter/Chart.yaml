@@ -17,6 +17,7 @@ maintainers:
 keywords:
   - dagster
   - dagster-plus
+  - dagster-cloud
   - prometheus
   - monitoring
   - observability
