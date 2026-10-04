@@ -86,7 +86,7 @@ flowchart LR
     Grafana -- query --> Prometheus
 ```
 
-A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Seven collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, op pool concurrency) run concurrently on every scrape.
+A single Go binary with no external state store: it polls Dagster's GraphQL API on an interval, keeps the result in memory, and serves it from `/metrics`. Scraping (writing that state) and serving `/metrics` (reading it) are decoupled, so a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state. Seven collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, op pool concurrency) run concurrently on every scrape. Because that state is in-memory and per-process, run only one replica - see [`replicaCount`](charts/dagster-prometheus-exporter/README.md#values) in the chart.
 
 For the package layout, why there are six separate collectors, and how completed-run fetching stays incremental instead of re-scanning everything every cycle, see [docs/architecture.md](docs/architecture.md).
 

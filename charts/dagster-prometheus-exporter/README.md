@@ -26,7 +26,7 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `replicaCount` | `1` | Number of exporter pods. |
+| `replicaCount` | `1` | Number of exporter pods. Keep at 1 - each replica keeps its own in-memory processed-runs cache, so more than one double-counts `dagster_completed_runs_total` (a `sum()` across replicas multiplies). For availability, rely on Kubernetes restarting the pod instead of adding replicas. |
 | `image.repository` | `ghcr.io/hirofumitsuda/dagster-prometheus-exporter` | Image to deploy. |
 | `image.tag` | `""` (chart's `appVersion`) | Image tag override. |
 | `port` | `9101` | Single source of truth for the container port, Service port, and the `PORT` env var. |

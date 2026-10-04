@@ -1,3 +1,7 @@
+# Keep at 1: each replica keeps its own in-memory processed-runs cache, so more
+# than one double-counts dagster_completed_runs_total (a sum() across replicas
+# multiplies). For availability, rely on Kubernetes restarting the pod instead
+# of adding replicas.
 replicaCount: 1
 
 nameOverride: ""
