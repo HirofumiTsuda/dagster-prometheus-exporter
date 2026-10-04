@@ -51,9 +51,8 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, cfg.RunsUpdatedAfterSafetyMargin)
 	assert.Equal(t, 500, cfg.RunsPageSize)
 
-	// Both of these are derived from the scraping interval rather than being
-	// fixed values, which is easy to break by accident — see the comments on
-	// cacheTTLScrapingIntervalMultiplier and LOOKBACK_WINDOW_MINUTES.
+	// The lookback follows the scraping interval. The cache TTL is the larger
+	// of its 20-interval baseline and the updatedAfter overlap requirement.
 	assert.Equal(t, 5*time.Minute+2*15*time.Second, cfg.CacheTTL)
 	assert.Equal(t, 15*time.Second, cfg.LookbackWindow)
 }
