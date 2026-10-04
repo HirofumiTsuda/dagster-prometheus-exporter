@@ -239,8 +239,8 @@ dagster_asset_last_materialization_status{status="failure"}
 | Endpoint | Purpose | Example response |
 | --- | --- | --- |
 | `GET /metrics` | Prometheus exposition of all metrics above. | See [Example output](#example-output). |
-| `GET /healthz` | Liveness probe. Always returns `200` as long as the process is up — it does not check Dagster connectivity, so it's safe to use for a container/k8s liveness check that shouldn't restart the pod just because Dagster is unreachable. | `200` `{"status":"healthy"}` |
-| `GET /readyz` | Readiness probe. Calls Dagster's GraphQL API and returns `200` only if it responds, `503` otherwise — use this (not `/healthz`) to gate traffic/scrape readiness on Dagster actually being reachable. On success, the response body also includes the connected Dagster instance's version. | `200` `{"status":"OK","version":"1.13.15"}`, or `503` `{"status":"NOT_READY","error":"..."}` |
+| `GET /healthz` | Liveness **and** readiness probe (the chart's [`deployment.yaml`](charts/dagster-prometheus-exporter/templates/deployment.yaml) points both at `/healthz`). Always returns `200` as long as the process is up — it does not check Dagster connectivity. Scraping and serving are decoupled by design, so `/metrics` keeps serving the last known state through a Dagster outage; gating readiness on Dagster connectivity (via `/readyz`, below) would instead pull the pod out of the Service the moment Dagster has an incident, silencing `dagster_exporter_last_scrape_success` and `dagster_daemon_healthy` at exactly the moment they matter. | `200` `{"status":"healthy"}` |
+| `GET /readyz` | Connectivity/diagnostic check, not an ongoing k8s readiness probe (see above) — calls Dagster's GraphQL API and returns `200` only if it responds, `503` otherwise. Useful as a one-shot check after a deploy (`curl .../readyz`; the response also includes the connected Dagster instance's version) and in CI/e2e, where `helm-e2e.yml` uses it to assert the exporter can actually reach a real Dagster instance. | `200` `{"status":"OK","version":"1.13.15"}`, or `503` `{"status":"NOT_READY","error":"..."}` |
 
 ## Usage
 
