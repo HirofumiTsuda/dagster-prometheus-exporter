@@ -21,7 +21,7 @@ RUN go build -ldflags="-w -s \
     -X github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/version.Commit=${COMMIT}" \
     -o /app/exporter ./cmd/exporter
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk --no-cache add ca-certificates tzdata
 
