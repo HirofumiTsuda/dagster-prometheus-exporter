@@ -51,10 +51,9 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, cfg.RunsUpdatedAfterSafetyMargin)
 	assert.Equal(t, 500, cfg.RunsPageSize)
 
-	// Both of these are derived from the scraping interval rather than being
-	// fixed values, which is easy to break by accident — see the comments on
-	// cacheTTLScrapingIntervalMultiplier and LOOKBACK_WINDOW_MINUTES.
-	assert.Equal(t, cacheTTLScrapingIntervalMultiplier*15*time.Second, cfg.CacheTTL)
+	// The lookback follows the scraping interval. The cache TTL is the larger
+	// of its 20-interval baseline and the updatedAfter overlap requirement.
+	assert.Equal(t, 5*time.Minute+2*15*time.Second, cfg.CacheTTL)
 	assert.Equal(t, 15*time.Second, cfg.LookbackWindow)
 }
 
@@ -165,4 +164,43 @@ func TestLoadWarnsWhenTimeoutExceedsInterval(t *testing.T) {
 	_, err = Load()
 	require.NoError(t, err)
 	assert.Empty(t, buf.String(), "the usual timeout < interval case should be silent")
+}
+
+func TestLoadDerivedCacheTTLRespectsSafetyMargin(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS":        "15",
+		"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES": "6",
+	})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, 6*time.Minute+2*15*time.Second, cfg.CacheTTL,
+		"the default should cover the updatedAfter overlap plus two scrapes")
+}
+
+func TestLoadAcceptsCacheTTLAtOverlapMinimum(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS":        "30",
+		"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES": "4",
+		"CACHE_TTL_MINUTES":                        "5",
+	})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Minute, cfg.CacheTTL)
+}
+
+func TestLoadRejectsCacheTTLBelowOverlapMinimum(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS":        "15",
+		"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES": "5",
+		"CACHE_TTL_MINUTES":                        "5",
+	})
+
+	cfg, err := Load()
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "CACHE_TTL_MINUTES")
+	assert.Contains(t, err.Error(), "RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES")
 }

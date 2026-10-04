@@ -70,12 +70,9 @@ func getEnvDuration(key string, unit time.Duration, def time.Duration) (time.Dur
 }
 
 // processedRuns entries are touched (their TTL refreshed) on every scrape
-// that still finds a run relevant, so the TTL only needs to survive
-// consecutive missed/failed scrapes rather than any particular data-related
-// window. Defaulting it to a multiple of the scraping interval — rather than
-// an unrelated fixed value — means it tolerates about the same span as
-// RunsUpdatedAfterSafetyMargin's default (20 x 15s = 5m) worth of scrape
-// failures before risking a double count.
+// that still finds a run. The TTL must also cover the updatedAfter overlap
+// plus two scraping intervals. Use 20 scrape intervals as a baseline for
+// missed or failed scrapes, but raise it when the overlap needs more time.
 const cacheTTLScrapingIntervalMultiplier = 20
 
 // Load reads the exporter's configuration from environment variables,
@@ -111,9 +108,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	cacheTTL, err := getEnvDuration("CACHE_TTL_MINUTES", time.Minute, cacheTTLScrapingIntervalMultiplier*dagsterScrapingInterval)
+	minimumCacheTTL := runsUpdatedAfterSafetyMargin + 2*dagsterScrapingInterval
+	defaultCacheTTL := cacheTTLScrapingIntervalMultiplier * dagsterScrapingInterval
+	if defaultCacheTTL < minimumCacheTTL {
+		defaultCacheTTL = minimumCacheTTL
+	}
+
+	cacheTTL, err := getEnvDuration("CACHE_TTL_MINUTES", time.Minute, defaultCacheTTL)
 	if err != nil {
 		return nil, err
+	}
+	if cacheTTL < minimumCacheTTL {
+		return nil, fmt.Errorf("invalid CACHE_TTL_MINUTES: must be at least %s (RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES + 2*DAGSTER_SCRAPING_INTERVAL_SECONDS)", minimumCacheTTL)
 	}
 
 	// Completed runs are fetched incrementally after the first scrape (see

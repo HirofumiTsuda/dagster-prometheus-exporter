@@ -298,3 +298,29 @@ func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
 
 	assert.Error(t, CollectCompletedRuns(t.Context(), c))
 }
+
+func TestCollectCompletedRunsDeduplicatesUntilCacheExpires(t *testing.T) {
+	const response = `{"data":{"runsOrError":{"__typename":"Runs","results":[{"runId":"run_1","jobName":"job_a","status":"SUCCESS","creationTime":0,"endTime":100,"updateTime":1000,"repositoryOrigin":{"repositoryName":"repo_a","repositoryLocationName":"loc_a"}}]}}}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	counter := c.completedRunsCounter.WithLabelValues("job_a", "loc_a", "success")
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter),
+		"the same run returned on consecutive scrapes should only be counted once")
+
+	// Shorten the entry's TTL to exercise the documented expiration limitation.
+	c.processedRuns.Set("run_1", struct{}{}, 10*time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, float64(2), testutil.ToFloat64(counter),
+		"a repeated run can be counted again after its processedRuns entry expires")
+}
