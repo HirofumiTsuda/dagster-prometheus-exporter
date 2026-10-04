@@ -17,3 +17,15 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # Base images in docker/ (exporter.Dockerfile, dagster-dev.Dockerfile).
+  # Without this, the runtime image sat on alpine:3.20 past its end of
+  # support (#157, #163).
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker:
+        patterns:
+          - "*"
