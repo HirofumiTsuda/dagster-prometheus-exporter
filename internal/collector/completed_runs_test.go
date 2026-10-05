@@ -133,6 +133,52 @@ func TestCollectCompletedRunsTracksLastRunStatusAndDuration(t *testing.T) {
 	}
 }
 
+func TestCollectCompletedRunsCountsCanceledRuns(t *testing.T) {
+	var seenStatuses []interface{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		statuses, ok := req.Variables["statuses"].([]interface{})
+		require.True(t, ok, "statuses variable should be a list")
+		seenStatuses = statuses
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(`{
+			"data": {
+				"runsOrError": {
+					"__typename": "Runs",
+					"results": [
+						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "creationTime": 0, "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}},
+						{"runId": "run_2", "jobName": "job_a", "status": "CANCELED", "creationTime": 150, "endTime": 180, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
+					]
+				}
+			}
+		}`))
+		if err != nil {
+			t.Fatalf("failed to write mock response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+
+	assert.Contains(t, seenStatuses, "CANCELED", "the runs query should ask Dagster for canceled runs")
+
+	canceled, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "loc_a", "canceled")
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), testutil.ToFloat64(canceled))
+
+	success, err := c.completedRunsCounter.GetMetricWithLabelValues("job_a", "loc_a", "success")
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), testutil.ToFloat64(success))
+
+	entry := c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc_a"}]
+	assert.Equal(t, "CANCELED", entry.status, "a canceled run that ended last should be the job's last run")
+	assert.Equal(t, float64(30), entry.duration)
+}
+
 func TestLastRunStatusPersistsAfterFallingOutOfLookbackWindow(t *testing.T) {
 	call := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

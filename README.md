@@ -100,7 +100,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | --- | --- | --- |
 | `dagster_active_runs` | Gauge | Currently active runs (`queued`/`starting`/`started`) per job. |
 | `dagster_active_run_duration_seconds` | Gauge | How long the oldest active run in a job/status has been there — a signal for stuck runs and queue backlogs. |
-| `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`) per job, since the exporter started. |
+| `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`/`canceled`) per job, since the exporter started. |
 | `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). |
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
 | `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |
@@ -143,6 +143,7 @@ dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-w
 dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="started"} 5.761711018
 dagster_active_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="starting"} 0
 
+dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="canceled"} 0
 dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="failure"} 0
 dagster_completed_runs_total{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 12
 dagster_completed_runs_total{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 3
