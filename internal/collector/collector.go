@@ -68,6 +68,11 @@ type DagsterCollector struct {
 	// lastRunStatus's newest-wins comparison already make reprocessing an
 	// already-seen run a no-op.
 	runsUpdatedAfterSafetyMargin time.Duration
+	// codeLocationLoadErrorMessage holds the load-error message of each
+	// currently failing code location, so CollectCodeLocationStatus only
+	// logs the stack trace when a location starts failing or its error
+	// message changes, not on every scrape.
+	codeLocationLoadErrorMessage map[string]string
 }
 
 func newDagsterCache(ctx context.Context, cacheTTL time.Duration) *ttlcache.Cache[string, struct{}] {

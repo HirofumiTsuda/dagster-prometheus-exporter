@@ -27,19 +27,38 @@ func CollectCodeLocationStatus(ctx context.Context, c *DagsterCollector) error {
 	// trustworthy. The per-entry check below is a different thing entirely:
 	// it's the metric itself, reporting which individual code locations
 	// failed to load while the workspace query as a whole succeeded.
-	loadErrors := make(map[string]bool, len(resp.Data.WorkspaceOrError.LocationEntries))
-	for _, entry := range resp.Data.WorkspaceOrError.LocationEntries {
+	entries := resp.Data.WorkspaceOrError.LocationEntries
+	loadErrors := make(map[string]bool, len(entries))
+	loadErrorMessages := make(map[string]string)
+	for _, entry := range entries {
 		failed := entry.LocationOrLoadError.Typename == "PythonError"
 		loadErrors[entry.Name] = failed
 		if failed {
-			log.Printf("code location %q failed to load: %s\n%s", entry.Name, entry.LocationOrLoadError.Message, strings.Join(entry.LocationOrLoadError.Stack, "\n"))
+			loadErrorMessages[entry.Name] = entry.LocationOrLoadError.Message
 		}
 	}
 
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
+	previousLoadErrors := c.codeLocationLoadError
+	previousLoadErrorMessages := c.codeLocationLoadErrorMessage
 	c.codeLocationLoadError = loadErrors
+	c.codeLocationLoadErrorMessage = loadErrorMessages
+	c.mutex.Unlock()
+
+	// The failure is already exposed as dagster_code_location_load_error, so
+	// only log the (multi-line) stack trace when a location starts failing
+	// or its error message changes, rather than on every scrape for as long
+	// as the failure lasts, and log a single line when it recovers.
+	for _, entry := range entries {
+		if loadErrors[entry.Name] {
+			if previous, wasFailing := previousLoadErrorMessages[entry.Name]; wasFailing && previous == loadErrorMessages[entry.Name] {
+				continue
+			}
+			log.Printf("code location %q failed to load: %s\n%s", entry.Name, entry.LocationOrLoadError.Message, strings.Join(entry.LocationOrLoadError.Stack, "\n"))
+		} else if previousLoadErrors[entry.Name] {
+			log.Printf("code location %q loaded successfully again", entry.Name)
+		}
+	}
 
 	return nil
 }
