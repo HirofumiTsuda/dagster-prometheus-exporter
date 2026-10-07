@@ -142,6 +142,33 @@ func TestLoadRejectsUnusableValues(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsCacheTTLShorterThanTwoIntervals(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS": "90",
+		"CACHE_TTL_MINUTES":                 "1",
+	})
+
+	cfg, err := Load()
+
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "CACHE_TTL_MINUTES")
+	assert.Contains(t, err.Error(), "DAGSTER_SCRAPING_INTERVAL_SECONDS")
+}
+
+func TestLoadAcceptsCacheTTLOfTwoIntervals(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS": "30",
+		"CACHE_TTL_MINUTES":                 "1",
+	})
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	assert.Equal(t, time.Minute, cfg.CacheTTL)
+	assert.Equal(t, 30*time.Second, cfg.DagsterScrapingInterval)
+}
+
 func TestLoadWarnsWhenTimeoutExceedsInterval(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)

@@ -115,6 +115,12 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// processedRuns refreshes TTL on hit, so a run is counted twice only when
+	// scrapes fail for longer than the TTL. Require the TTL to cover at least
+	// two intervals so a single missed scrape cannot expire the entry.
+	if cacheTTL < 2*dagsterScrapingInterval {
+		return nil, fmt.Errorf("invalid CACHE_TTL_MINUTES value: %v is shorter than 2 * DAGSTER_SCRAPING_INTERVAL_SECONDS (%v); a TTL that short can double-count completed runs after a missed scrape", cacheTTL, dagsterScrapingInterval)
+	}
 
 	// Completed runs are fetched incrementally after the first scrape (see
 	// CollectCompletedRuns), so LookbackWindow only matters for the initial
