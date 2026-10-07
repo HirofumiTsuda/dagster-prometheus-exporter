@@ -48,7 +48,7 @@ Labels: `location`
 
 `1` if that code location most recently failed to load (e.g. a broken import in user code), `0` if it loaded successfully.
 
-A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality.
+A code location can fail to load independently of any job/run activity — `dagster_active_runs`/`dagster_completed_runs_total` alone can't distinguish "this location has zero jobs" from "this location is broken," so this metric exists to surface that failure mode explicitly. The load-error message and stack trace are logged, not attached as a label, to avoid unbounded label cardinality. They are logged once when a location starts failing (or its error message changes), not on every scrape, and a single line is logged when it loads again.
 
 ## `dagster_daemon_healthy` (Gauge)
 
