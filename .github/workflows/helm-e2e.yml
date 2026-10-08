@@ -51,7 +51,7 @@ jobs:
       # development run the same one. azure/setup-helm defaults to "latest",
       # which is not reproducible and drifted a major version away from the
       # helm used for local chart testing.
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
 
       # For "Determine expected metric families" below — TestListMetricNames
       # runs on the runner directly, not inside a container.
