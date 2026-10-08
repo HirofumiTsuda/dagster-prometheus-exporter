@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,8 +74,8 @@ func TestCollectAssetStatusDistinguishesNeverRunFromFailed(t *testing.T) {
 	require.NoError(t, CollectAssetStatus(t.Context(), c))
 
 	require.Len(t, c.assetStatus, 3)
-	assert.Equal(t, assetStatusEntry{staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100}, c.assetStatus["good_asset"])
-	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: "FAILURE", lastMaterializationTimestamp: 1700000200}, c.assetStatus["bad_asset"],
+	assert.Equal(t, assetStatusEntry{staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100, hasLastMaterializationTimestamp: true}, c.assetStatus["good_asset"])
+	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: "FAILURE", lastMaterializationTimestamp: 1700000200, hasLastMaterializationTimestamp: true}, c.assetStatus["bad_asset"],
 		"a failed run must be distinguishable from an asset that has never run, even though both look MISSING via staleStatus alone")
 	assert.Equal(t, assetStatusEntry{staleStatus: "MISSING", lastMaterializationStatus: ""}, c.assetStatus["never_run_asset"])
 }
@@ -178,7 +179,7 @@ func TestCollectAssetStatusReturnsErrorOnGraphQLError(t *testing.T) {
 func TestReflectAssetStatus(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), "http://unused", "", time.Hour, time.Hour, 500, 5*time.Minute)
 	c.assetStatus = map[string]assetStatusEntry{
-		"good_asset":      {staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100},
+		"good_asset":      {staleStatus: "FRESH", lastMaterializationStatus: "SUCCESS", lastMaterializationTimestamp: 1700000100, hasLastMaterializationTimestamp: true},
 		"never_run_asset": {staleStatus: "MISSING", lastMaterializationStatus: ""},
 	}
 
@@ -229,4 +230,59 @@ func TestReflectAssetStatus(t *testing.T) {
 	assert.Equal(t, float64(1), seen[key{"dagster_asset_stale_status", "never_run_asset", "missing"}])
 	assert.Len(t, seen, 4,
 		"never_run_asset must not emit dagster_asset_last_materialization_status or dagster_asset_last_materialization_timestamp_seconds: it has no run to report")
+}
+
+// TestCollectAssetStatusCarriesTimestampWhileRunIsInProgress covers issue
+// #156: while an asset's latest run is still in progress, assetsLatestInfo
+// returns endTime: null. That must not become a 0 timestamp (1970). Instead
+// the previous scrape's end time is kept, and with no previous value (the
+// exporter started mid-run) the timestamp is left unset.
+func TestCollectAssetStatusCarriesTimestampWhileRunIsInProgress(t *testing.T) {
+	const nodesBody = `{"data": {"assetNodes": [{"assetKey": {"path": ["asset_a"]}, "staleStatus": "FRESH"}]}}`
+	latestInfo := func(latestRun string) string {
+		return `{"data": {"assetsLatestInfo": [{"assetKey": {"path": ["asset_a"]}, "latestRun": ` + latestRun + `}]}}`
+	}
+	const (
+		finished = `{"status": "SUCCESS", "endTime": 1700000100}`
+		running  = `{"status": "STARTED", "endTime": null}`
+	)
+
+	var current atomic.Value
+	current.Store(latestInfo(running))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		body := nodesBody
+		if strings.Contains(req.Query, "assetsLatestInfo") {
+			body = current.Load().(string)
+		}
+		_, err := w.Write([]byte(body))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(ts.Close)
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	scrape := func(latestRun string) assetStatusEntry {
+		t.Helper()
+		current.Store(latestInfo(latestRun))
+		require.NoError(t, CollectAssetStatus(t.Context(), c))
+		return c.assetStatus["asset_a"]
+	}
+
+	entry := scrape(running)
+	assert.Equal(t, "STARTED", entry.lastMaterializationStatus)
+	assert.False(t, entry.hasLastMaterializationTimestamp,
+		"a run already in progress when the exporter starts has no end time to report yet")
+
+	entry = scrape(finished)
+	assert.True(t, entry.hasLastMaterializationTimestamp)
+	assert.Equal(t, float64(1700000100), entry.lastMaterializationTimestamp)
+
+	entry = scrape(running)
+	assert.Equal(t, "STARTED", entry.lastMaterializationStatus)
+	assert.True(t, entry.hasLastMaterializationTimestamp)
+	assert.Equal(t, float64(1700000100), entry.lastMaterializationTimestamp,
+		"while the next run is in progress, the previous run's end time should be kept, not reset to 0")
 }
