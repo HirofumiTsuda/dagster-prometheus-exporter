@@ -68,6 +68,10 @@
         {
           "expr": "sum(dagster_completed_runs_total{status=\"failure\"})",
           "legendFormat": "failure"
+        },
+        {
+          "expr": "sum(dagster_completed_runs_total{status=\"canceled\"})",
+          "legendFormat": "canceled"
         }
       ],
       "gridPos": {
@@ -171,6 +175,10 @@
                       "failure": {
                         "text": "Failure",
                         "color": "red"
+                      },
+                      "canceled": {
+                        "text": "Canceled",
+                        "color": "light-grey"
                       }
                     }
                   }

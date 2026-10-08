@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	completedStatuses = []string{"FAILURE", "SUCCESS"}
+	completedStatuses = []string{"CANCELED", "FAILURE", "SUCCESS"}
 )
 
 func getUpdatedAfter(base time.Time, lookbackWindow time.Duration) float64 {

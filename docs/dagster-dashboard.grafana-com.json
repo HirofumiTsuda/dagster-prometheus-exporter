@@ -143,6 +143,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
+        },
+        {
+          "expr": "sum(dagster_completed_runs_total{status=\"canceled\"})",
+          "legendFormat": "canceled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "gridPos": {
@@ -278,6 +286,10 @@
                       "failure": {
                         "text": "Failure",
                         "color": "red"
+                      },
+                      "canceled": {
+                        "text": "Canceled",
+                        "color": "light-grey"
                       }
                     }
                   }
