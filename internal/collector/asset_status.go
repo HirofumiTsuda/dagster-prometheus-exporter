@@ -17,11 +17,15 @@ type assetStatusEntry struct {
 	// lastMaterializationStatus is "" when the asset has never had a run —
 	// no dagster_asset_last_materialization_status series is emitted for it.
 	lastMaterializationStatus string
-	// lastMaterializationTimestamp is only meaningful when
-	// lastMaterializationStatus is set -- both come from the same non-nil
-	// LatestRun, so reflectAssetStatus gates emitting it on that field
-	// rather than a dedicated has-value flag.
-	lastMaterializationTimestamp float64
+	// lastMaterializationTimestamp is the end time of the asset's most recent
+	// run that has finished. It's only meaningful when
+	// hasLastMaterializationTimestamp is set: while the latest run is still
+	// in progress its endTime is null, and the previous scrape's value is
+	// carried over instead (issue #156). With nothing to carry over (the
+	// exporter started mid-run), no dagster_asset_last_materialization_timestamp_seconds
+	// series is emitted until the run finishes.
+	lastMaterializationTimestamp    float64
+	hasLastMaterializationTimestamp bool
 }
 
 // CollectAssetStatus reports each asset's staleness and the outcome of its
@@ -61,6 +65,14 @@ func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 		assetKeys = append(assetKeys, node.AssetKey.Path)
 	}
 
+	// The previous scrape's entries, for carrying a finished run's end time
+	// over while the next run is in progress. CollectAssetStatus replaces
+	// c.assetStatus wholesale rather than mutating it, so reading the old map
+	// after releasing the lock is safe.
+	c.mutex.Lock()
+	previous := c.assetStatus
+	c.mutex.Unlock()
+
 	// No assets defined anywhere: skip the second query rather than ask
 	// assetsLatestInfo for an empty key list.
 	if len(assetKeys) > 0 {
@@ -78,7 +90,13 @@ func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 			key := assetKeyLabel(info.AssetKey.Path)
 			entry := entries[key]
 			entry.lastMaterializationStatus = info.LatestRun.Status
-			entry.lastMaterializationTimestamp = info.LatestRun.EndTime
+			if info.LatestRun.EndTime != nil {
+				entry.lastMaterializationTimestamp = *info.LatestRun.EndTime
+				entry.hasLastMaterializationTimestamp = true
+			} else if prev, ok := previous[key]; ok && prev.hasLastMaterializationTimestamp {
+				entry.lastMaterializationTimestamp = prev.lastMaterializationTimestamp
+				entry.hasLastMaterializationTimestamp = true
+			}
 			entries[key] = entry
 		}
 	}
@@ -127,6 +145,9 @@ func reflectAssetStatus(c *DagsterCollector, ch chan<- prometheus.Metric) {
 				assetKey,
 				strings.ToLower(entry.lastMaterializationStatus),
 			)
+		}
+
+		if entry.hasLastMaterializationTimestamp {
 			ch <- prometheus.MustNewConstMetric(
 				c.assetLastMaterializationTimestampDesc,
 				prometheus.GaugeValue,

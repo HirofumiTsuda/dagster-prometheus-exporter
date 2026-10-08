@@ -532,8 +532,12 @@ type GraphQLAssetsLatestInfoResponse struct {
 				Path AssetKeyPath `json:"path"`
 			} `json:"assetKey"`
 			LatestRun *struct {
-				Status  string  `json:"status"`
-				EndTime float64 `json:"endTime"`
+				Status string `json:"status"`
+				// EndTime is null while the run is still in progress
+				// (issue #156), so it can't be a plain float64: that would
+				// decode to 0 and report the asset as last materialized in
+				// 1970.
+				EndTime *float64 `json:"endTime"`
 			} `json:"latestRun"`
 		} `json:"assetsLatestInfo"`
 	} `json:"data"`
