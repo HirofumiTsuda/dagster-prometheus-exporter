@@ -25,8 +25,27 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- $podSecurity := .Values.podSecurityContext | default dict }}
+      securityContext:
+        runAsNonRoot: {{ dig "runAsNonRoot" true $podSecurity }}
+        runAsUser: {{ dig "runAsUser" 65532 $podSecurity }}
+        runAsGroup: {{ dig "runAsGroup" 65532 $podSecurity }}
+        seccompProfile:
+          type: {{ dig "type" "RuntimeDefault" (dig "seccompProfile" dict $podSecurity) }}
       containers:
         - name: {{ .Chart.Name }}
+          {{- $containerSecurity := .Values.securityContext | default dict }}
+          securityContext:
+            runAsNonRoot: {{ dig "runAsNonRoot" true $containerSecurity }}
+            runAsUser: {{ dig "runAsUser" 65532 $containerSecurity }}
+            runAsGroup: {{ dig "runAsGroup" 65532 $containerSecurity }}
+            readOnlyRootFilesystem: {{ dig "readOnlyRootFilesystem" true $containerSecurity }}
+            allowPrivilegeEscalation: {{ dig "allowPrivilegeEscalation" false $containerSecurity }}
+            capabilities:
+              drop:
+                {{- toYaml (dig "drop" (list "ALL") (dig "capabilities" dict $containerSecurity)) | nindent 16 }}
+            seccompProfile:
+              type: {{ dig "type" "RuntimeDefault" (dig "seccompProfile" dict $containerSecurity) }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
