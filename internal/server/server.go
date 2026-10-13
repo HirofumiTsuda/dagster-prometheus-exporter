@@ -51,6 +51,9 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	defer cancel()
 
 	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
+	if cfg.Debug {
+		c.EnableGraphQLTimingLog()
+	}
 	prometheus.MustRegister(c)
 	registerBuildInfo()
 

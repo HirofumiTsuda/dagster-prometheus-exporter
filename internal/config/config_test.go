@@ -26,6 +26,7 @@ var configEnvVars = []string{
 	"CACHE_TTL_MINUTES",
 	"LOOKBACK_WINDOW_MINUTES",
 	"RUNS_PAGE_SIZE",
+	"LOG_LEVEL",
 }
 
 func init() {
@@ -281,4 +282,17 @@ func TestLoadWarnsOnlyForOverriddenCollectorsWithTimeoutAboveInterval(t *testing
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "asset_status")
 	assert.Equal(t, 1, strings.Count(buf.String(), "warning"), "other collectors inherit a sane schedule")
+}
+
+func TestLoadLogLevel(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "info": false, "debug": true, "DEBUG": true} {
+		setEnv(t, map[string]string{"LOG_LEVEL": value})
+		cfg, err := Load()
+		require.NoError(t, err, value)
+		assert.Equal(t, want, cfg.Debug, value)
+	}
+
+	setEnv(t, map[string]string{"LOG_LEVEL": "degub"})
+	_, err := Load()
+	require.ErrorContains(t, err, "LOG_LEVEL")
 }

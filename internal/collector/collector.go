@@ -257,6 +257,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 	}
 }
 
+// EnableGraphQLTimingLog makes every GraphQL call log its operation name,
+// duration and response size. Off by default: it adds a log line per call.
+func (c *DagsterCollector) EnableGraphQLTimingLog() {
+	c.client.debug = true
+}
+
 func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.activeRunsDesc
 	ch <- c.lastRunStatusDesc

@@ -10,7 +10,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 )
 
 // closeBody closes an HTTP response body, discarding the error. By this
@@ -43,6 +45,50 @@ var graphQLClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
+}
+
+// countingReader counts the bytes read through it, so the debug log can
+// report a response's size without buffering the body.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+var operationNamePattern = regexp.MustCompile(`(?m)^\s*(?:query|mutation)\s+(\w+)`)
+
+// graphQLOperationName returns the operation name of a request's query, e.g.
+// "GetAssetNodes", or "unknown" if the query is anonymous.
+func graphQLOperationName(request *GraphQLRequest) string {
+	if m := operationNamePattern.FindStringSubmatch(request.Query); m != nil {
+		return m[1]
+	}
+	return "unknown"
+}
+
+// logGraphQLTiming logs one GraphQL call's operation, duration, response size
+// and, for the one query whose cost scales with its input, how many asset keys
+// it asked for. It never logs the query text, variables or response, so a
+// deployment's asset names stay out of logs users may share when reporting a
+// slow scrape (issue #140).
+func logGraphQLTiming(request *GraphQLRequest, elapsed time.Duration, counter *countingReader, err error) {
+	var size int64
+	if counter != nil {
+		size = counter.n
+	}
+	line := fmt.Sprintf("debug: graphql %s took %v, response %d bytes", graphQLOperationName(request), elapsed.Round(time.Millisecond), size)
+	if keys, ok := request.Variables["assetKeys"].([]assetKeyInput); ok {
+		line += fmt.Sprintf(", %d asset keys", len(keys))
+	}
+	if err != nil {
+		line += fmt.Sprintf(", failed: %v", err)
+	}
+	log.Print(line)
 }
 
 // graphQLErrors is embedded in every response type to carry GraphQL's
@@ -86,6 +132,8 @@ type graphQLResponse interface {
 type dagsterClient struct {
 	endpoint string
 	token    string
+	// debug makes doGraphQL log each call's duration and response size.
+	debug bool
 }
 
 // dagsterCloudAPITokenHeader is the HTTP header Dagster+ authenticates
@@ -104,7 +152,16 @@ const dagsterCloudAPITokenHeader = "Dagster-Cloud-Api-Token"
 // into a separate 36-line function per query, and that duplication is exactly
 // how the union checks in issue #69 came to exist in one copy but not the
 // others.
-func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClient, out graphQLResponse) error {
+func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClient, out graphQLResponse) (err error) {
+	var body io.Reader
+	var counter *countingReader
+	if client.debug {
+		start := time.Now()
+		defer func() {
+			logGraphQLTiming(request, time.Since(start), counter, err)
+		}()
+	}
+
 	jsonBytes, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("failed to marshal graphql request: %w", err)
@@ -138,7 +195,12 @@ func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClien
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	body = resp.Body
+	if client.debug {
+		counter = &countingReader{r: resp.Body}
+		body = counter
+	}
+	if err := json.NewDecoder(body).Decode(out); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 

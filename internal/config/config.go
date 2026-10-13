@@ -46,6 +46,9 @@ type Config struct {
 	// CollectorNames: its own override where set, else the global
 	// DagsterScrapingInterval / DagsterScrapingTimeout.
 	Collectors map[string]CollectorSchedule
+	// Debug is set by LOG_LEVEL=debug and turns on per-call GraphQL timing
+	// logs.
+	Debug bool
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -180,6 +183,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	debug, err := loadDebug()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
@@ -191,6 +199,7 @@ func Load() (*Config, error) {
 		RunsPageSize:                 runsPageSize,
 		RunsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
 		Collectors:                   collectors,
+		Debug:                        debug,
 	}, nil
 }
 
@@ -231,4 +240,18 @@ func loadCollectorSchedules(interval, timeout time.Duration) (map[string]Collect
 		schedules[name] = CollectorSchedule{Interval: collectorInterval, Timeout: collectorTimeout}
 	}
 	return schedules, nil
+}
+
+// loadDebug reads LOG_LEVEL, which is either "info" (the default) or "debug".
+// Anything else is rejected rather than silently ignored, so a typo like
+// LOG_LEVEL=degub doesn't leave the user wondering why nothing is logged.
+func loadDebug() (bool, error) {
+	switch level := strings.ToLower(os.Getenv("LOG_LEVEL")); level {
+	case "", "info":
+		return false, nil
+	case "debug":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid LOG_LEVEL value: %q (must be info or debug)", level)
+	}
 }

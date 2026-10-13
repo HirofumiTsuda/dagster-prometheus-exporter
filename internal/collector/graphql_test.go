@@ -1,11 +1,14 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -350,4 +353,53 @@ func TestGraphQLTopLevelErrorsAreReported(t *testing.T) {
 				"the GraphQL error message should survive decoding through the embedded struct")
 		})
 	}
+}
+
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return &buf
+}
+
+func TestGraphQLOperationName(t *testing.T) {
+	assert.Equal(t, "GetAssetNodes", graphQLOperationName(getAssetNodesRequest()))
+	assert.Equal(t, "GetAssetsLatestInfo", graphQLOperationName(getAssetsLatestInfoRequest(nil)))
+	assert.Equal(t, "unknown", graphQLOperationName(&GraphQLRequest{Query: "{ version }"}))
+}
+
+func TestDoGraphQLLogsTimingOnlyWhenDebugIsOn(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data": {"assetsLatestInfo": []}}`))
+	}))
+	defer ts.Close()
+
+	req := getAssetsLatestInfoRequest([]AssetKeyPath{{"secret_schema", "secret_table"}, {"b"}})
+
+	buf := captureLog(t)
+	_, err := getAssetsLatestInfo(t.Context(), req, dagsterClient{endpoint: ts.URL})
+	require.NoError(t, err)
+	assert.Empty(t, buf.String(), "no timing log unless debug is enabled")
+
+	_, err = getAssetsLatestInfo(t.Context(), req, dagsterClient{endpoint: ts.URL, debug: true})
+	require.NoError(t, err)
+	out := buf.String()
+	assert.Contains(t, out, "GetAssetsLatestInfo")
+	assert.Contains(t, out, "2 asset keys")
+	assert.Contains(t, out, "response 34 bytes")
+	assert.NotContains(t, out, "secret", "asset names must stay out of the log")
+}
+
+func TestDoGraphQLLogsDurationOfFailedCalls(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer ts.Close()
+
+	buf := captureLog(t)
+	_, err := getAssetNodes(t.Context(), getAssetNodesRequest(), dagsterClient{endpoint: ts.URL, debug: true})
+	require.Error(t, err)
+	assert.Contains(t, buf.String(), "GetAssetNodes")
+	assert.Contains(t, buf.String(), "failed:")
 }
