@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,15 @@ var configEnvVars = []string{
 	"CACHE_TTL_MINUTES",
 	"LOOKBACK_WINDOW_MINUTES",
 	"RUNS_PAGE_SIZE",
+}
+
+func init() {
+	for _, name := range CollectorNames {
+		prefix := strings.ToUpper(name)
+		configEnvVars = append(configEnvVars,
+			prefix+"_SCRAPING_INTERVAL_SECONDS",
+			prefix+"_SCRAPING_TIMEOUT_SECONDS")
+	}
 }
 
 func setEnv(t *testing.T, env map[string]string) {
@@ -192,4 +202,83 @@ func TestLoadWarnsWhenTimeoutExceedsInterval(t *testing.T) {
 	_, err = Load()
 	require.NoError(t, err)
 	assert.Empty(t, buf.String(), "the usual timeout < interval case should be silent")
+}
+
+func TestLoadCollectorsInheritTheGlobalSchedule(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS": "30",
+		"DAGSTER_SCRAPING_TIMEOUT_SECONDS":  "20",
+	})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Len(t, cfg.Collectors, len(CollectorNames))
+	for _, name := range CollectorNames {
+		assert.Equal(t, CollectorSchedule{Interval: 30 * time.Second, Timeout: 20 * time.Second}, cfg.Collectors[name], name)
+	}
+}
+
+func TestLoadCollectorOverridesApplyToThatCollectorOnly(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS":           "15",
+		"ASSET_STATUS_SCRAPING_INTERVAL_SECONDS":      "300",
+		"ASSET_STATUS_SCRAPING_TIMEOUT_SECONDS":       "120",
+		"DEFINITIONS_ROSTER_SCRAPING_TIMEOUT_SECONDS": "60",
+	})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, CollectorSchedule{Interval: 300 * time.Second, Timeout: 120 * time.Second}, cfg.Collectors["asset_status"])
+	assert.Equal(t, CollectorSchedule{Interval: 15 * time.Second, Timeout: 60 * time.Second}, cfg.Collectors["definitions_roster"],
+		"overriding only the timeout keeps the global interval")
+	assert.Equal(t, CollectorSchedule{Interval: 15 * time.Second, Timeout: 10 * time.Second}, cfg.Collectors["active_runs"])
+}
+
+func TestLoadRejectsUnusableCollectorOverrides(t *testing.T) {
+	for _, env := range []map[string]string{
+		{"ASSET_STATUS_SCRAPING_INTERVAL_SECONDS": "0"},
+		{"ASSET_STATUS_SCRAPING_TIMEOUT_SECONDS": "-1"},
+		{"ACTIVE_RUNS_SCRAPING_INTERVAL_SECONDS": "soon"},
+	} {
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "%v", env)
+	}
+}
+
+func TestLoadCompletedRunsSettingsFollowItsOwnInterval(t *testing.T) {
+	setEnv(t, map[string]string{
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS":        "15",
+		"COMPLETED_RUNS_SCRAPING_INTERVAL_SECONDS": "60",
+	})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, cacheTTLScrapingIntervalMultiplier*time.Minute, cfg.CacheTTL)
+	assert.Equal(t, time.Minute, cfg.LookbackWindow)
+
+	setEnv(t, map[string]string{
+		"COMPLETED_RUNS_SCRAPING_INTERVAL_SECONDS": "60",
+		"CACHE_TTL_MINUTES":                        "1",
+	})
+	_, err = Load()
+	require.Error(t, err, "a 1m TTL is shorter than two 60s completed_runs intervals")
+}
+
+func TestLoadWarnsOnlyForOverriddenCollectorsWithTimeoutAboveInterval(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	setEnv(t, map[string]string{
+		"ASSET_STATUS_SCRAPING_INTERVAL_SECONDS": "60",
+		"ASSET_STATUS_SCRAPING_TIMEOUT_SECONDS":  "90",
+	})
+
+	_, err := Load()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "asset_status")
+	assert.Equal(t, 1, strings.Count(buf.String(), "warning"), "other collectors inherit a sane schedule")
 }

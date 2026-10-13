@@ -6,8 +6,31 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// CollectorNames lists every collector the exporter runs, in the names used
+// for the collector label on the self-health metrics. Each one can override
+// the global scraping interval and timeout through
+// <NAME>_SCRAPING_INTERVAL_SECONDS / <NAME>_SCRAPING_TIMEOUT_SECONDS, where
+// NAME is the collector name upper-cased (ASSET_STATUS, ...).
+var CollectorNames = []string{
+	"definitions_roster",
+	"active_runs",
+	"completed_runs",
+	"code_location_status",
+	"daemon_health",
+	"asset_status",
+	"op_pool_concurrency",
+}
+
+// CollectorSchedule is how often one collector scrapes and how long a single
+// scrape of it may take.
+type CollectorSchedule struct {
+	Interval time.Duration
+	Timeout  time.Duration
+}
 
 type Config struct {
 	Port                         int
@@ -19,6 +42,10 @@ type Config struct {
 	DagsterScrapingTimeout       time.Duration
 	RunsPageSize                 int
 	RunsUpdatedAfterSafetyMargin time.Duration
+	// Collectors holds the effective schedule of every collector in
+	// CollectorNames: its own override where set, else the global
+	// DagsterScrapingInterval / DagsterScrapingTimeout.
+	Collectors map[string]CollectorSchedule
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -106,27 +133,42 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	dagsterScrapingTimeout, err := getEnvDuration("DAGSTER_SCRAPING_TIMEOUT_SECONDS", time.Second, 10*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	collectors, err := loadCollectorSchedules(dagsterScrapingInterval, dagsterScrapingTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// The settings below tune completed_runs, the only collector whose
+	// correctness depends on how often it runs, so they follow its interval
+	// rather than the global one.
+	completedRunsInterval := collectors["completed_runs"].Interval
+
 	runsUpdatedAfterSafetyMargin, err := getEnvDuration("RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES", time.Minute, 5*time.Minute)
 	if err != nil {
 		return nil, err
 	}
 
-	cacheTTL, err := getEnvDuration("CACHE_TTL_MINUTES", time.Minute, cacheTTLScrapingIntervalMultiplier*dagsterScrapingInterval)
+	cacheTTL, err := getEnvDuration("CACHE_TTL_MINUTES", time.Minute, cacheTTLScrapingIntervalMultiplier*completedRunsInterval)
 	if err != nil {
 		return nil, err
 	}
 	// processedRuns refreshes TTL on hit, so a run is counted twice only when
 	// scrapes fail for longer than the TTL. Require the TTL to cover at least
 	// two intervals so a single missed scrape cannot expire the entry.
-	if cacheTTL < 2*dagsterScrapingInterval {
-		return nil, fmt.Errorf("invalid CACHE_TTL_MINUTES value: %v is shorter than 2 * DAGSTER_SCRAPING_INTERVAL_SECONDS (%v); a TTL that short can double-count completed runs after a missed scrape", cacheTTL, dagsterScrapingInterval)
+	if cacheTTL < 2*completedRunsInterval {
+		return nil, fmt.Errorf("invalid CACHE_TTL_MINUTES value: %v is shorter than 2 * the completed_runs scraping interval (%v, from DAGSTER_SCRAPING_INTERVAL_SECONDS or COMPLETED_RUNS_SCRAPING_INTERVAL_SECONDS); a TTL that short can double-count completed runs after a missed scrape", cacheTTL, completedRunsInterval)
 	}
 
 	// Completed runs are fetched incrementally after the first scrape (see
 	// CollectCompletedRuns), so LookbackWindow only matters for the initial
 	// backfill on startup. Defaulting it to the scraping interval avoids
 	// dumping a large batch of historical runs into the counters at t=0.
-	lookbackWindow, err := getEnvDuration("LOOKBACK_WINDOW_MINUTES", time.Minute, dagsterScrapingInterval)
+	lookbackWindow, err := getEnvDuration("LOOKBACK_WINDOW_MINUTES", time.Minute, completedRunsInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -136,21 +178,6 @@ func Load() (*Config, error) {
 	runsPageSize, err := getEnvInt("RUNS_PAGE_SIZE", 500, 1, math.MaxInt32)
 	if err != nil {
 		return nil, err
-	}
-
-	dagsterScrapingTimeout, err := getEnvDuration("DAGSTER_SCRAPING_TIMEOUT_SECONDS", time.Second, 10*time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	// Scrapes run serially inside startScrape's loop, so a timeout longer
-	// than the interval lets one slow scrape push the next tick back and
-	// stretch the effective interval. That isn't invalid — waiting longer on
-	// a temporarily slow Dagster is a reasonable thing to want — so this
-	// warns rather than errors, just so it doesn't happen unnoticed.
-	if dagsterScrapingTimeout > dagsterScrapingInterval {
-		log.Printf("warning: DAGSTER_SCRAPING_TIMEOUT_SECONDS (%v) is longer than DAGSTER_SCRAPING_INTERVAL_SECONDS (%v); a slow scrape will stretch the effective interval",
-			dagsterScrapingTimeout, dagsterScrapingInterval)
 	}
 
 	return &Config{
@@ -163,5 +190,45 @@ func Load() (*Config, error) {
 		DagsterScrapingTimeout:       dagsterScrapingTimeout,
 		RunsPageSize:                 runsPageSize,
 		RunsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
+		Collectors:                   collectors,
 	}, nil
+}
+
+// loadCollectorSchedules resolves every collector's interval and timeout:
+// its <NAME>_SCRAPING_*_SECONDS override if set, else the global value.
+//
+// A collector's scrapes run serially, so a timeout longer than its interval
+// lets one slow scrape push the next tick back and stretch the effective
+// interval. That isn't invalid -- waiting longer on a temporarily slow
+// Dagster is a reasonable thing to want -- so this warns rather than errors,
+// just so it doesn't happen unnoticed.
+func loadCollectorSchedules(interval, timeout time.Duration) (map[string]CollectorSchedule, error) {
+	// Collectors that inherit both global values share the global warning
+	// below instead of each repeating it.
+	if timeout > interval {
+		log.Printf("warning: DAGSTER_SCRAPING_TIMEOUT_SECONDS (%v) is longer than DAGSTER_SCRAPING_INTERVAL_SECONDS (%v); a slow scrape will stretch the effective interval",
+			timeout, interval)
+	}
+
+	schedules := make(map[string]CollectorSchedule, len(CollectorNames))
+	for _, name := range CollectorNames {
+		prefix := strings.ToUpper(name)
+
+		collectorInterval, err := getEnvDuration(prefix+"_SCRAPING_INTERVAL_SECONDS", time.Second, interval)
+		if err != nil {
+			return nil, err
+		}
+		collectorTimeout, err := getEnvDuration(prefix+"_SCRAPING_TIMEOUT_SECONDS", time.Second, timeout)
+		if err != nil {
+			return nil, err
+		}
+
+		overridden := collectorInterval != interval || collectorTimeout != timeout
+		if overridden && collectorTimeout > collectorInterval {
+			log.Printf("warning: the %s scraping timeout (%v) is longer than its scraping interval (%v); a slow scrape will stretch the effective interval",
+				name, collectorTimeout, collectorInterval)
+		}
+		schedules[name] = CollectorSchedule{Interval: collectorInterval, Timeout: collectorTimeout}
+	}
+	return schedules, nil
 }

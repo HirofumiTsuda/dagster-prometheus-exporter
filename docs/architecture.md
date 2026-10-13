@@ -8,7 +8,7 @@ The exporter is a single Go binary with no external state store — everything i
 
 - `cmd/exporter` — entrypoint; loads config and starts the server.
 - `internal/config` — reads settings from environment variables.
-- `internal/server` — runs the HTTP server (`/metrics`, `/healthz`, `/readyz`) and a background ticker that triggers a scrape on `DAGSTER_SCRAPING_INTERVAL_SECONDS`.
+- `internal/server` — runs the HTTP server (`/metrics`, `/healthz`, `/readyz`) and one background loop per collector, each on its own schedule: `DAGSTER_SCRAPING_INTERVAL_SECONDS` / `DAGSTER_SCRAPING_TIMEOUT_SECONDS` unless the collector has a `<COLLECTOR>_SCRAPING_*` override.
 - `internal/collector` — on each scrape, queries Dagster's GraphQL API (active runs, completed runs, the definitions roster, each code location's load status, daemon health, asset status, and op/step pool concurrency) and updates the in-memory state behind a mutex; `DagsterCollector` implements `prometheus.Collector` and renders that state into metrics whenever Prometheus scrapes `/metrics`.
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.

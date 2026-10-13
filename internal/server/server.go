@@ -61,7 +61,7 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 
 	srv := newHTTPServer(mux, cfg.DagsterScrapingTimeout)
 
-	go startScrape(ctx, c, cfg.DagsterScrapingInterval, cfg.DagsterScrapingTimeout)
+	go startScrape(ctx, c, cfg.Collectors)
 
 	return serve(ctx, srv, ln)
 }
