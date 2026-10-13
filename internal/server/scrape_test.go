@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/collector"
+	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/config"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -96,4 +99,65 @@ func TestScrapeDagsterRecordsSelfHealthMetrics(t *testing.T) {
 	for _, name := range []string{"definitions_roster", "active_runs", "completed_runs"} {
 		assert.Equal(t, float64(1), success[name], "%s should report a successful scrape", name)
 	}
+}
+
+func TestRunCollectorScrapesOnItsOwnIntervalUntilCancelled(t *testing.T) {
+	var requests atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	ctx, cancel := context.WithCancel(t.Context())
+
+	done := make(chan struct{})
+	go func() {
+		runCollector(ctx, c, "active_runs", config.CollectorSchedule{Interval: 10 * time.Millisecond, Timeout: time.Second})
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool { return requests.Load() >= 3 }, 2*time.Second, 5*time.Millisecond,
+		"a collector with a short interval should scrape repeatedly, not once per global cycle")
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runCollector did not return after its context was cancelled")
+	}
+}
+
+func TestStartScrapeKeepsAFastCollectorRunningWhileASlowOneIsStuck(t *testing.T) {
+	var runsRequests atomic.Int32
+	unblock := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "runsOrError") {
+			runsRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
+			return
+		}
+		<-unblock // every other collector hangs until the test is done
+	}))
+	defer ts.Close()
+	defer close(unblock)
+
+	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	schedules := map[string]config.CollectorSchedule{}
+	for _, name := range config.CollectorNames {
+		schedules[name] = config.CollectorSchedule{Interval: time.Hour, Timeout: time.Hour}
+	}
+	schedules["active_runs"] = config.CollectorSchedule{Interval: 10 * time.Millisecond, Timeout: time.Second}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go startScrape(ctx, c, schedules)
+
+	require.Eventually(t, func() bool { return runsRequests.Load() >= 3 }, 2*time.Second, 5*time.Millisecond,
+		"a stuck collector must not hold back the others")
 }

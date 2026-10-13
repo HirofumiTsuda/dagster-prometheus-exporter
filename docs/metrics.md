@@ -213,7 +213,7 @@ Absent for a pool Dagster reports no limit for at all — the schema makes `limi
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven concurrent collectors described in [docs/architecture.md](architecture.md)).
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven collectors described in [docs/architecture.md](architecture.md)). Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 
