@@ -35,6 +35,8 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `dagsterCloudApiToken.existingSecret` | `""` | Name of a Secret holding a Dagster+ API token, passed to the exporter as `DAGSTER_CLOUD_API_TOKEN`. Leave empty for OSS Dagster. See [Dagster+](#dagster). |
 | `dagsterCloudApiToken.key` | `token` | Key within that Secret. |
 | `resources` | `{}` | Standard pod resource requests/limits. |
+| `podSecurityContext` | `runAsNonRoot`, uid/gid `65532`, `RuntimeDefault` seccomp | Pod-level security context. Matches the image's numeric user so `runAsNonRoot` can be enforced. |
+| `securityContext` | non-root, read-only root filesystem, no privilege escalation, drop all capabilities, `RuntimeDefault` seccomp | Container-level security context. The exporter writes nothing to disk, so the read-only root filesystem is safe. |
 | `podAnnotations` / `podLabels` | `{}` | Extra pod metadata. |
 | `nodeSelector` | `{}` | Node labels the pod must match to be scheduled. |
 | `tolerations` | `[]` | Taints the pod tolerates — e.g. for a dedicated monitoring node pool. |

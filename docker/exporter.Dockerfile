@@ -25,8 +25,12 @@ FROM alpine:3.24
 
 RUN apk --no-cache add ca-certificates tzdata
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
+# Numeric UID/GID so Kubernetes can enforce runAsNonRoot. A named USER
+# (appuser) is rejected by the kubelet when runAsNonRoot is set, because it
+# cannot resolve the name against the image passwd without running the
+# container. 65532 matches the distroless nonroot uid.
+RUN addgroup -S -g 65532 appgroup && adduser -S -u 65532 -G appgroup appuser
+USER 65532:65532
 
 WORKDIR /app
 
