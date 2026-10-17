@@ -62,3 +62,46 @@ func TestRecordScrapeResultFailureIncrementsErrorCounter(t *testing.T) {
 	c.mutex.Unlock()
 	assert.False(t, success)
 }
+
+func TestSeedScrapeHealthMakesSeriesExistBeforeTheFirstScrape(t *testing.T) {
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
+
+	c.SeedScrapeHealth([]string{"active_runs", "asset_status"})
+
+	assert.Equal(t, 2, testutil.CollectAndCount(c, "dagster_exporter_last_scrape_success"))
+	assert.Equal(t, 2, testutil.CollectAndCount(c, "dagster_exporter_scrape_errors_total"))
+	assert.Equal(t, 0, testutil.CollectAndCount(c, "dagster_exporter_scrape_duration_seconds"),
+		"there is no real duration before the first scrape, so none is reported")
+
+	ch := make(chan prometheus.Metric, 8)
+	go func() {
+		reflectScrapeHealth(c, ch)
+		close(ch)
+	}()
+	for m := range ch {
+		var dm dto.Metric
+		require.NoError(t, m.Write(&dm))
+		assert.Equal(t, float64(0), dm.GetGauge().GetValue(), "an unscraped collector has not succeeded yet")
+	}
+}
+
+func TestSeedScrapeHealthDoesNotOverwriteARecordedResult(t *testing.T) {
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
+	c.RecordScrapeResult("active_runs", time.Second, nil)
+
+	c.SeedScrapeHealth([]string{"active_runs"})
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	assert.True(t, c.scrapeResults["active_runs"].success)
+	assert.True(t, c.scrapeResults["active_runs"].scraped)
+}
+
+func TestScrapeDurationAppearsOnceAScrapeCompletes(t *testing.T) {
+	c := NewDagsterCollector(t.Context(), "http://example.invalid", "", time.Hour, time.Hour, 500, 5*time.Minute)
+	c.SeedScrapeHealth([]string{"active_runs"})
+
+	c.RecordScrapeResult("active_runs", time.Second, errors.New("boom"))
+
+	assert.Equal(t, 1, testutil.CollectAndCount(c, "dagster_exporter_scrape_duration_seconds"))
+}

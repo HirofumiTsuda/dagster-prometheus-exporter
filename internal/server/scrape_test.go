@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,7 +118,7 @@ func TestRunCollectorScrapesOnItsOwnIntervalUntilCancelled(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runCollector(ctx, c, "active_runs", config.CollectorSchedule{Interval: 10 * time.Millisecond, Timeout: time.Second})
+		runCollector(ctx, c, "active_runs", config.CollectorSchedule{Interval: 10 * time.Millisecond, Timeout: time.Second}, true)
 		close(done)
 	}()
 
@@ -136,13 +138,16 @@ func TestStartScrapeKeepsAFastCollectorRunningWhileASlowOneIsStuck(t *testing.T)
 	unblock := make(chan struct{})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		if strings.Contains(string(body), "runsOrError") {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), "repositoriesOrError"):
+			_, _ = w.Write([]byte(`{"data": {"repositoriesOrError": {"__typename": "RepositoryConnection", "nodes": []}}}`))
+		case strings.Contains(string(body), "runsOrError"):
 			runsRequests.Add(1)
-			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
-			return
+		default:
+			<-unblock // every other collector hangs until the test is done
 		}
-		<-unblock // every other collector hangs until the test is done
 	}))
 	defer ts.Close()
 	defer close(unblock)
@@ -160,4 +165,82 @@ func TestStartScrapeKeepsAFastCollectorRunningWhileASlowOneIsStuck(t *testing.T)
 
 	require.Eventually(t, func() bool { return runsRequests.Load() >= 3 }, 2*time.Second, 5*time.Millisecond,
 		"a stuck collector must not hold back the others")
+}
+
+const rosterWithOneJob = `{"data": {"repositoriesOrError": {"__typename": "RepositoryConnection",
+	"nodes": [{"name": "repo", "location": {"name": "loc_a"}, "jobs": [{"name": "job_a"}], "schedules": [], "sensors": []}]}}}`
+
+func TestStartScrapeFetchesTheRosterBeforeAnyOtherCollector(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	rosterDone := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), "repositoriesOrError") {
+			time.Sleep(100 * time.Millisecond)
+			mu.Lock()
+			order = append(order, "roster")
+			mu.Unlock()
+			_, _ = w.Write([]byte(rosterWithOneJob))
+			close(rosterDone)
+			return
+		}
+		select {
+		case <-rosterDone:
+		default:
+			mu.Lock()
+			order = append(order, "other-before-roster")
+			mu.Unlock()
+		}
+		_, _ = w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
+	}))
+	defer ts.Close()
+
+	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	schedules := map[string]config.CollectorSchedule{}
+	for _, name := range config.CollectorNames {
+		schedules[name] = config.CollectorSchedule{Interval: time.Hour, Timeout: 5 * time.Second}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go startScrape(ctx, c, schedules)
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(order) > 0
+	}, 2*time.Second, 5*time.Millisecond)
+	<-rosterDone
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"roster"}, order, "no other collector may query Dagster before the roster has been fetched, and the roster is fetched once")
+}
+
+func TestFirstScrapeReportsIdleJobsAsZeroActiveRuns(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), "repositoriesOrError") {
+			_, _ = w.Write([]byte(rosterWithOneJob))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data": {"runsOrError": {"__typename": "Runs", "results": []}}}`))
+	}))
+	defer ts.Close()
+
+	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	schedules := map[string]config.CollectorSchedule{}
+	for _, name := range config.CollectorNames {
+		schedules[name] = config.CollectorSchedule{Interval: time.Hour, Timeout: 5 * time.Second}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go startScrape(ctx, c, schedules)
+
+	require.Eventually(t, func() bool {
+		return testutil.CollectAndCount(c, "dagster_active_runs") > 0
+	}, 2*time.Second, 10*time.Millisecond, "dagster_active_runs should have series for the idle job after the first scrape, not only from the second")
 }

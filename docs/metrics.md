@@ -219,13 +219,13 @@ These report on the exporter itself, rather than on Dagster's run state. The fir
 
 Labels: `collector`
 
-Duration of that collector's most recent scrape.
+Duration of that collector's most recent scrape. Absent until its first scrape completes.
 
 ### `dagster_exporter_last_scrape_success` (Gauge)
 
 Labels: `collector`
 
-`1` if that collector's most recent scrape succeeded, `0` if it failed.
+`1` if that collector's most recent scrape succeeded, `0` if it failed. Reads `0` from startup until a collector's first scrape completes, so an exporter that never gets a scrape through is caught by `dagster_exporter_last_scrape_success == 0` rather than going silent. The first fetch of the definitions roster finishes before the other collectors start.
 
 ### `dagster_exporter_scrape_errors_total` (Counter)
 

@@ -14,6 +14,30 @@ import (
 type scrapeResult struct {
 	duration float64
 	success  bool
+	// scraped is false for an entry that SeedScrapeHealth created and no
+	// scrape has completed yet. A duration of 0 would be a made-up number, so
+	// it is not emitted until a real one exists.
+	scraped bool
+}
+
+// SeedScrapeHealth makes the self-health series exist from startup, for every
+// collector in names, instead of appearing one by one as scrapes complete.
+// last_scrape_success reads 0 and the error counter 0 until a scrape says
+// otherwise.
+//
+// Leaving them absent would defeat the alert on last_scrape_success == 0: it
+// cannot fire on a series that does not exist, so an exporter that never
+// finishes its first scrape would look the same as a healthy one.
+func (c *DagsterCollector) SeedScrapeHealth(names []string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	for _, name := range names {
+		if _, ok := c.scrapeResults[name]; !ok {
+			c.scrapeResults[name] = scrapeResult{}
+		}
+		c.scrapeErrorsCounter.WithLabelValues(name).Add(0)
+	}
 }
 
 // RecordScrapeResult records the outcome of one collector's most recent
@@ -26,6 +50,7 @@ func (c *DagsterCollector) RecordScrapeResult(collectorName string, duration tim
 	c.scrapeResults[collectorName] = scrapeResult{
 		duration: duration.Seconds(),
 		success:  err == nil,
+		scraped:  true,
 	}
 
 	if err != nil {
@@ -38,12 +63,14 @@ func reflectScrapeHealth(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	defer c.mutex.Unlock()
 
 	for name, result := range c.scrapeResults {
-		ch <- prometheus.MustNewConstMetric(
-			c.scrapeDurationDesc,
-			prometheus.GaugeValue,
-			result.duration,
-			name,
-		)
+		if result.scraped {
+			ch <- prometheus.MustNewConstMetric(
+				c.scrapeDurationDesc,
+				prometheus.GaugeValue,
+				result.duration,
+				name,
+			)
+		}
 
 		success := 0.0
 		if result.success {
