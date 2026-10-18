@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,19 +143,20 @@ func TestCollectCompletedRunsCountsCanceledRuns(t *testing.T) {
 		require.True(t, ok, "statuses variable should be a list")
 		seenStatuses = statuses
 
+		now := time.Now().Unix()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`{
+		_, err := fmt.Fprintf(w, `{
 			"data": {
 				"runsOrError": {
 					"__typename": "Runs",
 					"results": [
-						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "creationTime": 0, "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}},
-						{"runId": "run_2", "jobName": "job_a", "status": "CANCELED", "creationTime": 150, "endTime": 180, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
+						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "creationTime": %d, "endTime": %d, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}},
+						{"runId": "run_2", "jobName": "job_a", "status": "CANCELED", "creationTime": %d, "endTime": %d, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "loc_a"}}
 					]
 				}
 			}
-		}`))
+		}`, now-160, now-60, now-40, now-10)
 		if err != nil {
 			t.Fatalf("failed to write mock response: %v", err)
 		}
@@ -288,16 +290,16 @@ func TestPruneCompletedRunsCounterRemovesStaleLocationNotInRoster(t *testing.T) 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`{
+		_, err := fmt.Fprintf(w, `{
 			"data": {
 				"runsOrError": {
 					"__typename": "Runs",
 					"results": [
-						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "endTime": 100, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "old.module.path"}}
+						{"runId": "run_1", "jobName": "job_a", "status": "SUCCESS", "endTime": %d, "repositoryOrigin": {"repositoryName": "__repository__", "repositoryLocationName": "old.module.path"}}
 					]
 				}
 			}
-		}`))
+		}`, time.Now().Unix()-10)
 		if err != nil {
 			t.Fatalf("failed to write mock response: %v", err)
 		}
@@ -343,4 +345,63 @@ func TestCollectCompletedRunsReturnsErrorOnServerError(t *testing.T) {
 	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 
 	assert.Error(t, CollectCompletedRuns(t.Context(), c))
+}
+
+func runsResponse(runs ...string) string {
+	return `{"data":{"runsOrError":{"__typename":"Runs","results":[` + strings.Join(runs, ",") + `]}}}`
+}
+
+func completedRun(id, job string, end, update int64) string {
+	return fmt.Sprintf(`{"runId":%q,"jobName":%q,"status":"SUCCESS","creationTime":%d,"endTime":%d,"updateTime":%d,"repositoryOrigin":{"repositoryName":"repo","repositoryLocationName":"loc"}}`,
+		id, job, end-10, end, update)
+}
+
+func TestCollectCompletedRunsDoesNotRecountARunTaggedLongAfterItFinished(t *testing.T) {
+	base := time.Now().Unix()
+	responses := []string{
+		// A run finishes and is counted.
+		runsResponse(completedRun("run_a", "job_a", base, base)),
+		// Later runs move the watermark an hour past it.
+		runsResponse(completedRun("run_b", "job_b", base+3600, base+3600)),
+		// Dagster adds a tag to the first run, which bumps its updateTime and
+		// brings it back, although it finished long before this window.
+		runsResponse(completedRun("run_a", "job_a", base, base+7200)),
+	}
+	call := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(responses[call]))
+		require.NoError(t, err)
+		call++
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	jobA := c.completedRunsCounter.WithLabelValues("job_a", "loc", "success")
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, float64(1), testutil.ToFloat64(jobA))
+
+	// The entry expires while the run is out of the window.
+	c.processedRuns.Delete("run_a")
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(jobA),
+		"a run that finished before the window and was only tagged later is not a new completion")
+}
+
+func TestCollectCompletedRunsStillCountsARunWithoutAnEndTime(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(runsResponse(completedRun("run_a", "job_a", 0, time.Now().Unix()))))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(c.completedRunsCounter.WithLabelValues("job_a", "loc", "success")),
+		"Dagster recorded no end time, so the run cannot be judged old and is counted")
 }
