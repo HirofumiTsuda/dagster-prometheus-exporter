@@ -14,6 +14,26 @@ Always test in the current git branch's working tree, uncommitted, and
 revert at the end (step 6). Never commit a version bump from this skill
 without deliberately deciding to move the pin.
 
+## Quick check when only a query changed
+
+The full procedure below builds the dev image with dbt for each version, which
+takes a few minutes per version. When the only change since the last full pass
+is a GraphQL query or field (for example selecting `isPartitioned`), a lighter
+check is enough to find out whether every version still accepts it: no dbt, no
+Docker.
+
+For each candidate version, make a throwaway venv with only
+`dagster==<version>` and `dagster-webserver==<version>` (`uv venv --python 3.12`
+and `uv pip install`), serve a small code location with a partitioned and an
+unpartitioned asset, a job, a schedule and a sensor
+(`dagster-webserver -f defs.py`), run the exporter against it for about 25
+seconds, and read `/metrics`. Every collector reporting
+`dagster_exporter_last_scrape_success 1` means no GraphQL error. A field the
+version lacks makes its collector report `0` and logs `graphql error`.
+
+This does not assert every metric family, since it triggers no runs, so it
+cannot replace the full pass. Run both before moving the pin.
+
 ## 1. Find the matching dagster-dbt version
 
 `dagster-dbt` pins an *exact* matching `dagster` patch 1:1 (verified:

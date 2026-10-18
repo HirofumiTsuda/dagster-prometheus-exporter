@@ -52,11 +52,18 @@ That said, a few other versions have been spot-checked against a real instance (
 
 | Dagster version | Result |
 | --- | --- |
+| 1.9.13 | ✅ Compatible (all collectors scrape without GraphQL errors) — `dagster_daemon_healthy` reports 4 daemon types: no `QUEUED_RUN_COORDINATOR` or `FRESHNESS_DAEMON` yet |
+| 1.10.21 | ✅ Compatible (all collectors scrape without GraphQL errors) — 5 daemon types, no `FRESHNESS_DAEMON` yet |
 | 1.11.16 | ✅ Compatible — `dagster_daemon_healthy` reports 5 daemon types, not 6 (`FRESHNESS_DAEMON` doesn't exist yet; see [docs/metrics.md](docs/metrics.md)) |
 | 1.12.0 | ✅ Compatible |
 | 1.12.22 | ✅ Compatible |
+| 1.13.0 | ✅ Compatible (all collectors scrape without GraphQL errors) |
 | **1.13.15** | ✅ Compatible — the pinned/CI version |
 | 1.13.19 | ✅ Compatible |
+| 1.13.26 | ✅ Compatible (all collectors scrape without GraphQL errors) — the latest at the time of writing |
+| Dagster+ | ✅ All seven collectors scrape successfully against a trial deployment. Dagster+ reports a build hash as its version, and a partitioned asset's `dagster_asset_stale_status` was not exercised there |
+
+The versions marked "all collectors scrape without GraphQL errors" were checked after `dagster_asset_stale_status` started to select `isPartitioned` (#194), against a minimal code location with partitioned and unpartitioned assets, a schedule and a sensor. That shows every query this exporter makes is accepted, and that a partitioned asset has no `dagster_asset_stale_status` series on any of them. It does not assert every metric family the way the other rows do, since it runs no jobs to trigger the rarer ones.
 
 Versions between these are more likely than not to work too, but haven't been individually verified. If you hit a GraphQL error running against a different version, please [open an issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose).
 
