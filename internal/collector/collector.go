@@ -206,7 +206,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		),
 		assetStaleStatusDesc: prometheus.NewDesc(
 			"dagster_asset_stale_status",
-			"Whether an asset's data is missing, stale, or fresh (value is always 1; status is carried in the status label, one of missing/stale/fresh). Absent for an asset Dagster reports no computable stale status for",
+			"Whether an asset's data is missing, stale, or fresh (value is always 1; status is carried in the status label, one of missing/stale/fresh). Absent for an asset Dagster reports no computable stale status for, and for a partitioned asset (Dagster only computes it per partition)",
 			[]string{"asset_key", "status"},
 			nil,
 		),
