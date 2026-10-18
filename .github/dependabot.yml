@@ -29,3 +29,10 @@ updates:
       docker:
         patterns:
           - "*"
+    # Python 3.14 breaks the dev Dagster image: dbt-common imports
+    # mashumaro.jsonschema, which fails at import time on 3.14 with the
+    # locked mashumaro, so the code location never loads. Drop this once dbt
+    # supports 3.14.
+    ignore:
+      - dependency-name: "python"
+        versions: [">=3.14"]
