@@ -25,27 +25,16 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- $podSecurity := .Values.podSecurityContext | default dict }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        runAsNonRoot: {{ dig "runAsNonRoot" true $podSecurity }}
-        runAsUser: {{ dig "runAsUser" 65532 $podSecurity }}
-        runAsGroup: {{ dig "runAsGroup" 65532 $podSecurity }}
-        seccompProfile:
-          type: {{ dig "type" "RuntimeDefault" (dig "seccompProfile" dict $podSecurity) }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
-          {{- $containerSecurity := .Values.securityContext | default dict }}
+          {{- with .Values.securityContext }}
           securityContext:
-            runAsNonRoot: {{ dig "runAsNonRoot" true $containerSecurity }}
-            runAsUser: {{ dig "runAsUser" 65532 $containerSecurity }}
-            runAsGroup: {{ dig "runAsGroup" 65532 $containerSecurity }}
-            readOnlyRootFilesystem: {{ dig "readOnlyRootFilesystem" true $containerSecurity }}
-            allowPrivilegeEscalation: {{ dig "allowPrivilegeEscalation" false $containerSecurity }}
-            capabilities:
-              drop:
-                {{- toYaml (dig "drop" (list "ALL") (dig "capabilities" dict $containerSecurity)) | nindent 16 }}
-            seccompProfile:
-              type: {{ dig "type" "RuntimeDefault" (dig "seccompProfile" dict $containerSecurity) }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
