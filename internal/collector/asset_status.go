@@ -58,7 +58,12 @@ func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
 	assetKeys := make([]AssetKeyPath, 0, len(nodesResp.Data.AssetNodes))
 	for _, node := range nodesResp.Data.AssetNodes {
 		var entry assetStatusEntry
-		if node.StaleStatus != nil {
+		// Dagster answers a partitioned asset's staleStatus with FRESH when no
+		// partition is given, whatever its partitions' state is. Emitting
+		// that would claim a freshness nobody computed, so it is left out.
+		// Per-partition status (staleStatusByPartition) would be one series
+		// per partition, which is too many for assets with many of them.
+		if node.StaleStatus != nil && !node.IsPartitioned {
 			entry.staleStatus = *node.StaleStatus
 		}
 		entries[assetKeyLabel(node.AssetKey.Path)] = entry

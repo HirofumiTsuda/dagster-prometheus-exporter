@@ -133,6 +133,36 @@ func TestCollectAssetStatusHandlesNullStaleStatus(t *testing.T) {
 	assert.Equal(t, "", c.assetStatus["no_stale_status_asset"].staleStatus)
 }
 
+func TestCollectAssetStatusLeavesOutStaleStatusOfPartitionedAssets(t *testing.T) {
+	// Dagster answers FRESH for a partitioned asset asked without a partition,
+	// whatever its partitions are, so the status must not be reported.
+	nodesBody := `{
+		"data": {
+			"assetNodes": [
+				{"assetKey": {"path": ["partitioned_asset"]}, "isPartitioned": true, "staleStatus": "FRESH"},
+				{"assetKey": {"path": ["plain_asset"]}, "isPartitioned": false, "staleStatus": "STALE"}
+			]
+		}
+	}`
+	latestInfoBody := `{
+		"data": {
+			"assetsLatestInfo": [
+				{"assetKey": {"path": ["partitioned_asset"]}, "latestRun": {"status": "SUCCESS", "endTime": 100}},
+				{"assetKey": {"path": ["plain_asset"]}, "latestRun": {"status": "SUCCESS", "endTime": 100}}
+			]
+		}
+	}`
+	ts := assetStatusServer(t, nodesBody, latestInfoBody)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+
+	require.NoError(t, CollectAssetStatus(t.Context(), c))
+
+	assert.Equal(t, "", c.assetStatus["partitioned_asset"].staleStatus)
+	assert.Equal(t, "STALE", c.assetStatus["plain_asset"].staleStatus)
+	assert.Equal(t, "SUCCESS", c.assetStatus["partitioned_asset"].lastMaterializationStatus,
+		"the run-based metrics still cover a partitioned asset")
+}
+
 // TestCollectAssetStatusSkipsLatestInfoQueryWhenNoAssetsDefined checks that
 // an empty assetNodes result short-circuits before asking assetsLatestInfo
 // for zero asset keys — a request the schema doesn't reject, but that's

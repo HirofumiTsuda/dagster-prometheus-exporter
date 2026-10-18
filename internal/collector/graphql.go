@@ -554,7 +554,8 @@ type GraphQLAssetNodesResponse struct {
 			AssetKey struct {
 				Path AssetKeyPath `json:"path"`
 			} `json:"assetKey"`
-			StaleStatus *string `json:"staleStatus"`
+			IsPartitioned bool    `json:"isPartitioned"`
+			StaleStatus   *string `json:"staleStatus"`
 		} `json:"assetNodes"`
 	} `json:"data"`
 	graphQLErrors

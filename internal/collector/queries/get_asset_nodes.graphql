@@ -3,6 +3,7 @@ query GetAssetNodes {
     assetKey {
       path
     }
+    isPartitioned
     staleStatus
   }
 }
