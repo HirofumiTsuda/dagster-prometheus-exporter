@@ -51,6 +51,7 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	defer cancel()
 
 	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
+	c.SeedScrapeHealth(config.CollectorNames)
 	if cfg.Debug {
 		c.EnableGraphQLTimingLog()
 	}

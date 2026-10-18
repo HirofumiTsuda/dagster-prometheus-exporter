@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const rosterCollector = "definitions_roster"
+
 type collectFunc func(context.Context, *collector.DagsterCollector) error
 
 // collectFuncs maps each name in config.CollectorNames to the function that
@@ -46,12 +48,12 @@ func scrapeDagster(ctx context.Context, c *collector.DagsterCollector) {
 	wg.Wait()
 }
 
-// runCollector scrapes one collector immediately and then on every tick of its
-// own interval, each scrape bounded by its own timeout. Scrapes of one
-// collector never overlap: the next one only starts after the current one
-// finishes. Collectors don't wait for each other, so a slow one no longer
-// holds back the cheap ones.
-func runCollector(ctx context.Context, c *collector.DagsterCollector, name string, schedule config.CollectorSchedule) {
+// runCollector scrapes one collector on every tick of its own interval, each
+// scrape bounded by its own timeout, after an immediate first scrape unless
+// scrapeNow is false. Scrapes of one collector never overlap: the next one
+// only starts after the current one finishes. Collectors don't wait for each
+// other, so a slow one no longer holds back the cheap ones.
+func runCollector(ctx context.Context, c *collector.DagsterCollector, name string, schedule config.CollectorSchedule, scrapeNow bool) {
 	ticker := time.NewTicker(schedule.Interval)
 	defer ticker.Stop()
 
@@ -61,7 +63,9 @@ func runCollector(ctx context.Context, c *collector.DagsterCollector, name strin
 		scrapeOne(scrapeCtx, c, name)
 	}
 
-	scrapeWithTimeout()
+	if scrapeNow {
+		scrapeWithTimeout()
+	}
 
 	for {
 		select {
@@ -75,17 +79,33 @@ func runCollector(ctx context.Context, c *collector.DagsterCollector, name strin
 
 // startScrape runs every collector on its own schedule until ctx is
 // cancelled.
+//
+// The definitions roster is fetched once, to completion, before the other
+// collectors start, so the first scrape of active_runs already knows every
+// job and can report the idle ones as 0 instead of leaving them absent. It is
+// only the first fetch that waits: afterwards the roster runs concurrently
+// with the rest, because serializing every cycle would add a round trip to
+// each scrape.
 func startScrape(ctx context.Context, c *collector.DagsterCollector, schedules map[string]config.CollectorSchedule) {
 	log.Printf("Starting background scraper (%d collectors)...", len(config.CollectorNames))
+
+	for _, name := range config.CollectorNames {
+		schedule := schedules[name]
+		log.Printf("  %s: interval %v, timeout %v", name, schedule.Interval, schedule.Timeout)
+	}
+
+	roster := schedules[rosterCollector]
+	warmUpCtx, cancel := context.WithTimeout(ctx, roster.Timeout)
+	scrapeOne(warmUpCtx, c, rosterCollector)
+	cancel()
 
 	var wg sync.WaitGroup
 	for _, name := range config.CollectorNames {
 		schedule := schedules[name]
-		log.Printf("  %s: interval %v, timeout %v", name, schedule.Interval, schedule.Timeout)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			runCollector(ctx, c, name, schedule)
+			runCollector(ctx, c, name, schedule, name != rosterCollector)
 		}()
 	}
 
