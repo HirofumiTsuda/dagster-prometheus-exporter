@@ -175,16 +175,19 @@ alerts:
     scheduleNotSucceeding:
       enabled: true
       alert: DagsterScheduleNotSucceeding
+      # status="failure", not status!="success": a skipped tick is routine
+      # and a tick still "started" is just in progress, and a daily schedule
+      # would stay in that state for a day.
       expr: |-
         dagster_schedule_status{status="running"} == 1
         and on (schedule_name, location)
-        dagster_schedule_last_tick_status{status!="success"} == 1
+        dagster_schedule_last_tick_status{status="failure"} == 1
       for: 15m
       labels:
         severity: warning
       annotations:
-        summary: "Dagster schedule {{ $labels.schedule_name }} isn't succeeding"
-        description: "Schedule {{ $labels.schedule_name }} in code location {{ $labels.location }} is turned on but its most recent tick did not succeed."
+        summary: "Dagster schedule {{ $labels.schedule_name }} is failing"
+        description: "Schedule {{ $labels.schedule_name }} in code location {{ $labels.location }} is turned on and its most recent tick failed."
     sensorTickFailing:
       enabled: true
       alert: DagsterSensorTickFailing
@@ -201,13 +204,21 @@ alerts:
     sensorTickStale:
       enabled: true
       alert: DagsterSensorTickStale
-      expr: time() - dagster_sensor_last_tick_timestamp_seconds > 300
+      # Only running sensors: a stopped one keeps its last tick timestamp
+      # and would fire forever. The 300s threshold assumes every sensor
+      # ticks at least that often. The exporter does not expose a sensor's
+      # minimum_interval_seconds, so one with a longer interval needs its own
+      # threshold through an expr override (see the chart README).
+      expr: |-
+        (time() - dagster_sensor_last_tick_timestamp_seconds > 300)
+        and on (sensor_name, location)
+        dagster_sensor_status{status="running"} == 1
       for: 5m
       labels:
         severity: warning
       annotations:
         summary: "Dagster sensor {{ $labels.sensor_name }} stopped ticking"
-        description: "Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} hasn't ticked in {{ $value | humanizeDuration }}, suggesting a stalled evaluation loop."
+        description: "Sensor {{ $labels.sensor_name }} in code location {{ $labels.location }} is turned on but hasn't ticked in {{ $value | humanizeDuration }}, suggesting a stalled evaluation loop."
     assetMaterializationStale:
       # Off by default, unlike sensorTickStale above: sensors tick on one
       # fixed interval, but assets in the same cluster can have wildly
@@ -262,3 +273,17 @@ alerts:
       annotations:
         summary: "dagster-prometheus-exporter collector {{ $labels.collector }} is failing"
         description: "The {{ $labels.collector }} collector has been failing to scrape Dagster's GraphQL API for over 10 minutes -- other Dagster alerts may be based on stale data until this recovers."
+    exporterDown:
+      # absent() rather than up{job="..."} == 0: the chart does not control
+      # the Prometheus job name, so an up-based rule could silently never
+      # match. The cost is that absent() fires only when no replica reports
+      # the series, so with several replicas one that is down goes unnoticed.
+      enabled: true
+      alert: DagsterExporterDown
+      expr: absent(dagster_exporter_build_info)
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "dagster-prometheus-exporter is not reporting"
+        description: "No dagster_exporter_build_info series has been scraped for over 5 minutes. The exporter is down or Prometheus cannot reach it, so every other Dagster alert is blind until it is back."

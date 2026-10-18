@@ -67,9 +67,9 @@ See the main README's [Dagster+ section](../../README.md#dagster) for the endpoi
 
 ### Alerts (`alerts.enabled`)
 
-Off by default. When enabled, ships thirteen alerts covering daemon liveness, job/asset/schedule/sensor health, run-queue and concurrency-pool backlogs, code location load errors, and the exporter's own scrape health — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112), plus asset/concurrency-pool/run-queue-backlog alerts added afterward to cover every alertable metric in [docs/metrics.md](../../docs/metrics.md) (two metrics -- `dagster_daemon_healthy` and `dagster_schedule_last_tick_timestamp_seconds` -- are deliberately left out, see their own docs for why no single alert on them makes sense). See [values.yaml](values.yaml) for the exact rules.
+Off by default. When enabled, ships fourteen alerts covering daemon liveness, job/asset/schedule/sensor health, run-queue and concurrency-pool backlogs, code location load errors, and the exporter's own health (its scrapes of Dagster, and the exporter itself being down) — the set proposed in [#112](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/112), plus asset/concurrency-pool/run-queue-backlog alerts added afterward to cover every alertable metric in [docs/metrics.md](../../docs/metrics.md) (two metrics -- `dagster_daemon_healthy` and `dagster_schedule_last_tick_timestamp_seconds` -- are deliberately left out, see their own docs for why no single alert on them makes sense). See [values.yaml](values.yaml) for the exact rules.
 
-One of the thirteen, `assetMaterializationStale`, ships **disabled**: unlike sensors (one fixed tick interval), assets in the same cluster can materialize on wildly different cadences, so there's no single staleness threshold that fits every installation. Set `expr`'s threshold to match your own assets before enabling it.
+One of the fourteen, `assetMaterializationStale`, ships **disabled**: unlike sensors (one fixed tick interval), assets in the same cluster can materialize on wildly different cadences, so there's no single staleness threshold that fits every installation. Set `expr`'s threshold to match your own assets before enabling it.
 
 Each entry under `alerts.rules` is a complete rule (`alert`/`expr`/`for`/`labels`/`annotations`), so a values file only needs to set the fields it's changing — Helm deep-merges maps, and the rest of a built-in rule's defaults pass through untouched. That covers disabling one, tightening or loosening a threshold, or replacing `expr` entirely (e.g. to exclude a specific job/sensor by label). Adding an alert this chart doesn't know about is the same operation: give it a new key with the full rule spec:
 
@@ -81,7 +81,11 @@ alerts:
       enabled: false # too noisy for our queue depth, handled elsewhere
     sensorTickStale:
       # exclude one hourly sensor from the default 5-minute staleness check
-      expr: time() - dagster_sensor_last_tick_timestamp_seconds{sensor_name!="my_hourly_sensor"} > 300
+      # (an expr override replaces the whole rule, so keep the running-sensor join)
+      expr: |-
+        (time() - dagster_sensor_last_tick_timestamp_seconds{sensor_name!="my_hourly_sensor"} > 300)
+        and on (sensor_name, location)
+        dagster_sensor_status{status="running"} == 1
     myJobNeverRan:
       enabled: true
       alert: MyJobNeverRan
