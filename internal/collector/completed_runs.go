@@ -53,6 +53,16 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 				continue
 			}
 
+			// A run that finished before this scrape's window and is back only
+			// because something touched it later is not a new completion.
+			// Adding a tag bumps updateTime (and so brings the run back), and
+			// once the run's processedRuns entry has expired it would be
+			// counted a second time. EndTime 0 means Dagster recorded none, so
+			// the run cannot be judged and is counted as before.
+			if result.EndTime > 0 && result.EndTime < updatedAfter {
+				continue
+			}
+
 			c.processedRuns.Set(result.RunId, struct{}{}, ttlcache.DefaultTTL)
 
 			c.completedRunsCounter.WithLabelValues(result.JobName, location, strings.ToLower(result.Status)).Inc()
