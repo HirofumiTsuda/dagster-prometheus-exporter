@@ -405,3 +405,27 @@ func TestCollectCompletedRunsStillCountsARunWithoutAnEndTime(t *testing.T) {
 	assert.Equal(t, float64(1), testutil.ToFloat64(c.completedRunsCounter.WithLabelValues("job_a", "loc", "success")),
 		"Dagster recorded no end time, so the run cannot be judged old and is counted")
 }
+
+func TestCollectCompletedRunsDeduplicatesUntilCacheExpires(t *testing.T) {
+	now := time.Now().Unix()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(runsResponse(completedRun("run_1", "job_a", now, now))))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	counter := c.completedRunsCounter.WithLabelValues("job_a", "loc", "success")
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, float64(1), testutil.ToFloat64(counter),
+		"the same run returned on consecutive scrapes should only be counted once")
+
+	c.processedRuns.Set("run_1", struct{}{}, 10*time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, float64(2), testutil.ToFloat64(counter),
+		"a repeated run can be counted again after its processedRuns entry expires")
+}
