@@ -62,6 +62,29 @@ resources: {}
 podAnnotations: {}
 podLabels: {}
 
+# The image runs as the numeric uid/gid 65532, so runAsNonRoot can be enforced.
+# The exporter writes nothing to disk, so the root filesystem can be read-only.
+# Set a key to null to drop it (e.g. runAsUser on OpenShift), or the whole map
+# to null to render no securityContext.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
