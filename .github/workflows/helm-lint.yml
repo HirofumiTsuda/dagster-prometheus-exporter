@@ -16,6 +16,9 @@ on:
       - ".tool-versions"
       - ".github/workflows/helm-lint.yml"
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
