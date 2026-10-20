@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+# Nothing here writes to the repository. A job that needs more asks for it.
+permissions:
+  contents: read
+
 jobs:
   changes:
     runs-on: ubuntu-latest
+    # paths-filter lists a pull request's files through the API.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       go: ${{ steps.filter.outputs.go }}
       python: ${{ steps.filter.outputs.python }}
