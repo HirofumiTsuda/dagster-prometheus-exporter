@@ -15,13 +15,16 @@ query GetDefinitionsRoster {
           cronSchedule
           scheduleState {
             status
-            # afterTimestamp is required for limit to do anything: asking for
-            # ticks(limit: 1) alone returns an empty list, and afterTimestamp: 0
-            # reads as "not specified" rather than "since the epoch". 1 is one
-            # second after the epoch, so this is an unbounded lookback that
-            # returns only the newest tick — which is what the metric means.
-            # A bounded window (dayRange) would drop infrequent schedules out
-            # of the metric for most of their cycle. See issues #85 and #86.
+            # afterTimestamp keeps Dagster off its batch loader. For ticks(limit: 1)
+            # alone, the loader looks ticks up by the origin id saved in the
+            # instigator state, and finds nothing once the code location's
+            # origin id has changed (dagster dev picks a new socket on every
+            # restart). The list then comes back empty. afterTimestamp: 0 reads
+            # as "not specified", so 1 is used. It is an unbounded lookback that
+            # still returns only the newest tick, which is what the metric
+            # means. A bounded window (dayRange) would drop infrequent schedules
+            # out of the metric for most of their cycle. Dropping the argument
+            # does not make Dagster+ faster. See issues #85 and #86.
             ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
@@ -32,13 +35,16 @@ query GetDefinitionsRoster {
           name
           sensorState {
             status
-            # afterTimestamp is required for limit to do anything: asking for
-            # ticks(limit: 1) alone returns an empty list, and afterTimestamp: 0
-            # reads as "not specified" rather than "since the epoch". 1 is one
-            # second after the epoch, so this is an unbounded lookback that
-            # returns only the newest tick — which is what the metric means.
-            # A bounded window (dayRange) would drop infrequent schedules out
-            # of the metric for most of their cycle. See issues #85 and #86.
+            # afterTimestamp keeps Dagster off its batch loader. For ticks(limit: 1)
+            # alone, the loader looks ticks up by the origin id saved in the
+            # instigator state, and finds nothing once the code location's
+            # origin id has changed (dagster dev picks a new socket on every
+            # restart). The list then comes back empty. afterTimestamp: 0 reads
+            # as "not specified", so 1 is used. It is an unbounded lookback that
+            # still returns only the newest tick, which is what the metric
+            # means. A bounded window (dayRange) would drop infrequent schedules
+            # out of the metric for most of their cycle. Dropping the argument
+            # does not make Dagster+ faster. See issues #85 and #86.
             ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
