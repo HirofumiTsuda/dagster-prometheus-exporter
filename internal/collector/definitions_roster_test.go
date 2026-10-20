@@ -334,12 +334,9 @@ func TestCollectDefinitionsRosterTracksScheduleStatusAndLastTick(t *testing.T) {
 		"the timestamp carries the information in its value; a status label would churn the series")
 }
 
-// Dagster's InstigationState.ticks can return an empty list when asked with a
-// limit but no time bound: its batch loader finds nothing once the code
-// location's origin id differs from the one saved in the instigator state.
-// That is how the tick metrics came to be silently absent on a real instance
-// (issue #85). The other tests here can't catch that, because their mocks hand
-// back ticks regardless of what was asked.
+// The tick metrics must still be reported when Dagster's batch loader would
+// return an empty list. The other tests here can't catch that, because their
+// mocks hand back ticks regardless of what was asked.
 //
 // This server mimics the affected resolver: ticks come back only if the query
 // carried a time bound.

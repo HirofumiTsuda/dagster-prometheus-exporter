@@ -24,7 +24,7 @@ query GetDefinitionsRoster {
             # still returns only the newest tick, which is what the metric
             # means. A bounded window (dayRange) would drop infrequent schedules
             # out of the metric for most of their cycle. Dropping the argument
-            # does not make Dagster+ faster. See issues #85 and #86.
+            # does not make Dagster+ faster.
             ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
@@ -44,7 +44,7 @@ query GetDefinitionsRoster {
             # still returns only the newest tick, which is what the metric
             # means. A bounded window (dayRange) would drop infrequent schedules
             # out of the metric for most of their cycle. Dropping the argument
-            # does not make Dagster+ faster. See issues #85 and #86.
+            # does not make Dagster+ faster.
             ticks(limit: 1, afterTimestamp: 1) {
               status
               timestamp
