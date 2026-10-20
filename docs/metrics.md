@@ -153,6 +153,8 @@ Labels: `asset_key`, `status`
 
 Always `1`; an "info" metric reporting whether an asset's data is `missing`, `stale`, or `fresh`, from Dagster's `assetNodes.staleStatus`. `asset_key` is the asset's path segments joined with `/` (e.g. `my_dbt_project/customers`), the same separator Dagster's own UI uses. No series at all for an asset Dagster reports no computable stale status for (the field is nullable in the schema). Also no series for a partitioned asset: asked without a partition, Dagster answers `fresh` whatever its partitions' state is, so reporting it would claim a freshness nobody computed. Per-partition status is not exported, since that would be one series per partition. The two metrics below still cover partitioned assets.
 
+Dagster computes `staleStatus` one asset at a time, so the cost grows with the number of assets: about 6ms per asset in a measurement on Dagster+ (1006 assets: `GetAssetNodes` took 5 to 7s with it and about 0.6s without). With `ASSET_STALE_STATUS_ENABLED=false` the exporter does not ask for it and this metric has no series at all. The two metrics below are unaffected.
+
 Note this is derived from `assetMaterializations`, which only ever records successful events — a `failure`-status run in `dagster_asset_last_materialization_status` below still shows `missing`/`stale` here rather than anything reflecting the failure. Use the two metrics together, not this one alone, to tell "never materialized" apart from "materialization keeps failing".
 
 ## `dagster_asset_last_materialization_status` (Gauge)

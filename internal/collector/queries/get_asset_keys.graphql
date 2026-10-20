@@ -1,0 +1,7 @@
+query GetAssetKeys {
+  assetNodes {
+    assetKey {
+      path
+    }
+  }
+}

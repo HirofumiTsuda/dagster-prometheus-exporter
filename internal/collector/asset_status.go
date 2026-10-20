@@ -47,7 +47,7 @@ type assetStatusEntry struct {
 // assetsLatestInfo.latestRun.status distinguishes the two, hence the second
 // query.
 func CollectAssetStatus(ctx context.Context, c *DagsterCollector) error {
-	nodesReq := getAssetNodesRequest()
+	nodesReq := getAssetNodesRequest(!c.assetStaleStatusDisabled)
 	nodesResp, err := getAssetNodes(ctx, nodesReq, c.client)
 	if err != nil {
 		log.Printf("failed to collect asset nodes from dagster: %v", err)
