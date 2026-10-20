@@ -316,3 +316,33 @@ func TestCollectAssetStatusCarriesTimestampWhileRunIsInProgress(t *testing.T) {
 	assert.Equal(t, float64(1700000100), entry.lastMaterializationTimestamp,
 		"while the next run is in progress, the previous run's end time should be kept, not reset to 0")
 }
+
+func TestCollectAssetStatusWithStaleStatusDisabledDoesNotAskForIt(t *testing.T) {
+	var queries []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		queries = append(queries, req.Query)
+
+		w.Header().Set("Content-Type", "application/json")
+		body := `{"data":{"assetNodes":[{"assetKey":{"path":["plain_asset"]}}]}}`
+		if strings.Contains(req.Query, "assetsLatestInfo") {
+			body = `{"data":{"assetsLatestInfo":[{"assetKey":{"path":["plain_asset"]},"latestRun":{"status":"FAILURE","endTime":100}}]}}`
+		}
+		_, err := w.Write([]byte(body))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(ts.Close)
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	c.DisableAssetStaleStatus()
+
+	require.NoError(t, CollectAssetStatus(t.Context(), c))
+
+	require.Len(t, queries, 2)
+	assert.NotContains(t, queries[0], "staleStatus", "the query that makes Dagster compute it must not be sent")
+	assert.Contains(t, queries[0], "GetAssetKeys")
+	entry := c.assetStatus["plain_asset"]
+	assert.Equal(t, "", entry.staleStatus)
+	assert.Equal(t, "FAILURE", entry.lastMaterializationStatus, "the run-based metrics are unaffected")
+	assert.True(t, entry.hasLastMaterializationTimestamp)
+}

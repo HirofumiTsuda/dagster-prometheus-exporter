@@ -27,6 +27,7 @@ var configEnvVars = []string{
 	"LOOKBACK_WINDOW_MINUTES",
 	"RUNS_PAGE_SIZE",
 	"LOG_LEVEL",
+	"ASSET_STALE_STATUS_ENABLED",
 }
 
 func init() {
@@ -295,4 +296,17 @@ func TestLoadLogLevel(t *testing.T) {
 	setEnv(t, map[string]string{"LOG_LEVEL": "degub"})
 	_, err := Load()
 	require.ErrorContains(t, err, "LOG_LEVEL")
+}
+
+func TestLoadAssetStaleStatusEnabled(t *testing.T) {
+	for value, want := range map[string]bool{"": true, "true": true, "TRUE": true, "false": false, "False": false} {
+		setEnv(t, map[string]string{"ASSET_STALE_STATUS_ENABLED": value})
+		cfg, err := Load()
+		require.NoError(t, err, value)
+		assert.Equal(t, !want, cfg.AssetStaleStatusDisabled, value)
+	}
+
+	setEnv(t, map[string]string{"ASSET_STALE_STATUS_ENABLED": "flase"})
+	_, err := Load()
+	require.ErrorContains(t, err, "ASSET_STALE_STATUS_ENABLED")
 }

@@ -364,7 +364,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 }
 
 func TestGraphQLOperationName(t *testing.T) {
-	assert.Equal(t, "GetAssetNodes", graphQLOperationName(getAssetNodesRequest()))
+	assert.Equal(t, "GetAssetNodes", graphQLOperationName(getAssetNodesRequest(true)))
 	assert.Equal(t, "GetAssetsLatestInfo", graphQLOperationName(getAssetsLatestInfoRequest(nil)))
 	assert.Equal(t, "unknown", graphQLOperationName(&GraphQLRequest{Query: "{ version }"}))
 }
@@ -398,7 +398,7 @@ func TestDoGraphQLLogsDurationOfFailedCalls(t *testing.T) {
 	defer ts.Close()
 
 	buf := captureLog(t)
-	_, err := getAssetNodes(t.Context(), getAssetNodesRequest(), dagsterClient{endpoint: ts.URL, debug: true})
+	_, err := getAssetNodes(t.Context(), getAssetNodesRequest(true), dagsterClient{endpoint: ts.URL, debug: true})
 	require.Error(t, err)
 	assert.Contains(t, buf.String(), "GetAssetNodes")
 	assert.Contains(t, buf.String(), "failed:")

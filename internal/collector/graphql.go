@@ -564,7 +564,17 @@ type GraphQLAssetNodesResponse struct {
 //go:embed queries/get_asset_nodes.graphql
 var assetNodesQuery string
 
-func getAssetNodesRequest() *GraphQLRequest {
+// assetKeysQuery is assetNodesQuery without staleStatus (and the isPartitioned
+// that only qualifies it), for when ASSET_STALE_STATUS_ENABLED=false. It
+// decodes into the same response type, with those two fields left zero.
+//
+//go:embed queries/get_asset_keys.graphql
+var assetKeysQuery string
+
+func getAssetNodesRequest(withStaleStatus bool) *GraphQLRequest {
+	if !withStaleStatus {
+		return &GraphQLRequest{Query: assetKeysQuery}
+	}
 	return &GraphQLRequest{
 		Query: assetNodesQuery,
 	}

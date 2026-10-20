@@ -38,26 +38,28 @@ type DagsterCollector struct {
 	opPoolPendingStepsDesc                *prometheus.Desc
 	opPoolLimitDesc                       *prometheus.Desc
 
-	mutex                   sync.Mutex
-	activeRunAggregates     map[ActiveRunKey]activeRunAggregate
-	concurrencyKeyBacklog   map[string]int
-	scheduleStatus          map[ScheduleKey]string
-	scheduleTickStatus      map[ScheduleKey]scheduleTickEntry
-	sensorStatus            map[SensorKey]string
-	sensorTickStatus        map[SensorKey]sensorTickEntry
-	processedRuns           *ttlcache.Cache[string, struct{}]
-	lookbackWindow          time.Duration
-	knownJobs               map[JobKey]struct{}
-	jobAbsenceStreak        map[JobKey]int
-	lastRunStatus           map[JobKey]lastRunEntry
-	trackedCompletedRunKeys map[JobKey]struct{}
-	lastSeenUpdateTime      float64
-	runsPageSize            int
-	scrapeResults           map[string]scrapeResult
-	codeLocationLoadError   map[string]bool
-	daemonHealth            map[string]daemonHealthEntry
-	assetStatus             map[string]assetStatusEntry
-	opPoolConcurrency       map[string]opPoolConcurrencyEntry
+	mutex                 sync.Mutex
+	activeRunAggregates   map[ActiveRunKey]activeRunAggregate
+	concurrencyKeyBacklog map[string]int
+	scheduleStatus        map[ScheduleKey]string
+	scheduleTickStatus    map[ScheduleKey]scheduleTickEntry
+	sensorStatus          map[SensorKey]string
+	sensorTickStatus      map[SensorKey]sensorTickEntry
+	processedRuns         *ttlcache.Cache[string, struct{}]
+	// assetStaleStatusDisabled is set by DisableAssetStaleStatus.
+	assetStaleStatusDisabled bool
+	lookbackWindow           time.Duration
+	knownJobs                map[JobKey]struct{}
+	jobAbsenceStreak         map[JobKey]int
+	lastRunStatus            map[JobKey]lastRunEntry
+	trackedCompletedRunKeys  map[JobKey]struct{}
+	lastSeenUpdateTime       float64
+	runsPageSize             int
+	scrapeResults            map[string]scrapeResult
+	codeLocationLoadError    map[string]bool
+	daemonHealth             map[string]daemonHealthEntry
+	assetStatus              map[string]assetStatusEntry
+	opPoolConcurrency        map[string]opPoolConcurrencyEntry
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -255,6 +257,14 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
 		scrapeResults:                make(map[string]scrapeResult),
 	}
+}
+
+// DisableAssetStaleStatus stops the asset_status collector from asking for
+// assetNodes.staleStatus, and so from exporting dagster_asset_stale_status.
+// Dagster resolves it one asset at a time, which dominates asset_status on a
+// deployment with thousands of assets (issue #140).
+func (c *DagsterCollector) DisableAssetStaleStatus() {
+	c.assetStaleStatusDisabled = true
 }
 
 // EnableGraphQLTimingLog makes every GraphQL call log its operation name,

@@ -49,6 +49,11 @@ type Config struct {
 	// Debug is set by LOG_LEVEL=debug and turns on per-call GraphQL timing
 	// logs.
 	Debug bool
+	// AssetStaleStatusDisabled is set by ASSET_STALE_STATUS_ENABLED=false,
+	// which stops the asset_status collector from fetching
+	// assetNodes.staleStatus. It is "disabled" here and in the collector so
+	// that the zero value is the default behavior in both.
+	AssetStaleStatusDisabled bool
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -188,6 +193,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	assetStaleStatus, err := getEnvBool("ASSET_STALE_STATUS_ENABLED", true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
@@ -200,6 +210,7 @@ func Load() (*Config, error) {
 		RunsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
 		Collectors:                   collectors,
 		Debug:                        debug,
+		AssetStaleStatusDisabled:     !assetStaleStatus,
 	}, nil
 }
 
@@ -240,6 +251,24 @@ func loadCollectorSchedules(interval, timeout time.Duration) (map[string]Collect
 		schedules[name] = CollectorSchedule{Interval: collectorInterval, Timeout: collectorTimeout}
 	}
 	return schedules, nil
+}
+
+// getEnvBool reads env var key as a bool ("true" or "false", any case),
+// returning def when it's unset. Anything else is rejected, so a typo like
+// ASSET_STALE_STATUS_ENABLED=flase doesn't silently keep the default.
+func getEnvBool(key string, def bool) (bool, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return def, nil
+	}
+	switch strings.ToLower(val) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid %s value: %q (must be true or false)", key, val)
+	}
 }
 
 // loadDebug reads LOG_LEVEL, which is either "info" (the default) or "debug".
