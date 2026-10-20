@@ -49,10 +49,11 @@ type Config struct {
 	// Debug is set by LOG_LEVEL=debug and turns on per-call GraphQL timing
 	// logs.
 	Debug bool
-	// AssetStaleStatusEnabled is cleared by ASSET_STALE_STATUS_ENABLED=false,
+	// AssetStaleStatusDisabled is set by ASSET_STALE_STATUS_ENABLED=false,
 	// which stops the asset_status collector from fetching
-	// assetNodes.staleStatus.
-	AssetStaleStatusEnabled bool
+	// assetNodes.staleStatus. It is "disabled" here and in the collector so
+	// that the zero value is the default behavior in both.
+	AssetStaleStatusDisabled bool
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -209,7 +210,7 @@ func Load() (*Config, error) {
 		RunsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
 		Collectors:                   collectors,
 		Debug:                        debug,
-		AssetStaleStatusEnabled:      assetStaleStatus,
+		AssetStaleStatusDisabled:     !assetStaleStatus,
 	}, nil
 }
 

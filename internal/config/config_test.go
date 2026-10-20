@@ -303,7 +303,7 @@ func TestLoadAssetStaleStatusEnabled(t *testing.T) {
 		setEnv(t, map[string]string{"ASSET_STALE_STATUS_ENABLED": value})
 		cfg, err := Load()
 		require.NoError(t, err, value)
-		assert.Equal(t, want, cfg.AssetStaleStatusEnabled, value)
+		assert.Equal(t, !want, cfg.AssetStaleStatusDisabled, value)
 	}
 
 	setEnv(t, map[string]string{"ASSET_STALE_STATUS_ENABLED": "flase"})
