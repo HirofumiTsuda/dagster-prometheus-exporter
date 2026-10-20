@@ -10,8 +10,9 @@ response — not that Dagster produces that response. Three separate bugs
 (#69, #70, #85) were all invisible to a green CI. The worst was #85: the
 schedule and sensor tick metrics were implemented, tested, documented, and
 had Grafana panels, but had **never emitted a single series** on a real
-instance, because `ticks(limit: 1)` needs a time bound that the mock didn't
-model. It went unnoticed for weeks.
+instance, because `ticks(limit: 1)` alone can come back empty (the batch loader
+misses ticks once the code location's origin id changes) and the mock didn't
+model that. It went unnoticed for weeks.
 
 Finish the loop: create the condition in Dagster, then follow the data
 through the exporter, Prometheus, and the dashboard panel.

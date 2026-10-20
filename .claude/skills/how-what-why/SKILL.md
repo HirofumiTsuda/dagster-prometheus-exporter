@@ -58,8 +58,8 @@ Examples of the kind to write (the first is already in `graphql.go`):
 
 - `graphQLClient` does not follow redirects, because the client would forward
   `Dagster-Cloud-Api-Token` to wherever the redirect points.
-- `ticks(limit: 1)` needs a time bound; a mock that does not model it hides
-  the failure.
+- `ticks(limit: 1)` needs a time bound, or Dagster's batch loader can return
+  an empty list; a mock that does not model it hides the failure.
 - Do not buffer the whole response with `io.ReadAll` just to count its bytes;
   a counting reader keeps the memory use unchanged.
 
