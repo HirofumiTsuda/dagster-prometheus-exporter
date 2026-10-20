@@ -55,7 +55,7 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	if cfg.Debug {
 		c.EnableGraphQLTimingLog()
 	}
-	if cfg.AssetStaleStatusDisabled {
+	if !cfg.AssetStaleStatusEnabled {
 		c.DisableAssetStaleStatus()
 	}
 	prometheus.MustRegister(c)
