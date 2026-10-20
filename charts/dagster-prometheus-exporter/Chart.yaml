@@ -2,12 +2,12 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.11
+version: 0.1.12
 # Must exactly match a real tag on ghcr.io/hirofumitsuda/dagster-prometheus-exporter
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
 # templates/deployment.yaml defaults image.tag to this value.
-appVersion: "0.7.0"
+appVersion: "0.8.0"
 home: https://github.com/HirofumiTsuda/dagster-prometheus-exporter
 sources:
   - https://github.com/HirofumiTsuda/dagster-prometheus-exporter
@@ -36,12 +36,4 @@ annotations:
       url: https://raw.githubusercontent.com/HirofumiTsuda/dagster-prometheus-exporter/main/docs/images/grafana-dashboard.png
   artifacthub.io/changes: |
     - kind: changed
-      description: "podSecurityContext and securityContext now default to a restricted profile: uid/gid 65532, runAsNonRoot, read-only root filesystem, no privilege escalation, all capabilities dropped, RuntimeDefault seccomp. Set a key or a whole map to null to omit it (#154)."
-    - kind: added
-      description: "DagsterExporterDown alert, which fires when dagster_exporter_build_info has been absent for 5 minutes (#195)."
-    - kind: fixed
-      description: "sensorTickStale now considers only running sensors, and scheduleNotSucceeding matches status=failure instead of status!=success, so neither fires for stopped sensors or one skipped tick (#195)."
-    - kind: changed
-      description: "appVersion 0.6.1 -> 0.7.0: per-collector scrape settings, LOG_LEVEL=debug, canceled runs in the run metrics. dagster_asset_stale_status is no longer exported for partitioned assets, and startup rejects CACHE_TTL_MINUTES below two scrape intervals. See the v0.7.0 release notes."
-    - kind: added
-      description: "Documented that replicaCount above 1 double-counts completed runs (#173)."
+      description: "appVersion 0.7.0 to 0.8.0: adds ASSET_STALE_STATUS_ENABLED, which skips assetNodes.staleStatus when set to false (set it with env.ASSET_STALE_STATUS_ENABLED=false). Nothing changes unless you set it. See the v0.8.0 release notes."
