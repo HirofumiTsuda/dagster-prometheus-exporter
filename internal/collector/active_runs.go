@@ -46,7 +46,10 @@ type activeRunAggregate struct {
 // sub-second correction would be lost inside that. The consumers are
 // "queued longer than 10 minutes" style alerts, not stopwatch readings.
 func elapsedSince(run Run, now time.Time) float64 {
-	return now.Sub(time.Unix(int64(run.UpdateTime), 0)).Seconds()
+	// Clamped because updateTime is Dagster's clock and now is ours. When
+	// ours is behind, the difference is negative, which no threshold alert
+	// catches and a dashboard shows as nonsense.
+	return max(0, now.Sub(time.Unix(int64(run.UpdateTime), 0)).Seconds())
 }
 
 // CollectActiveRuns fetches every QUEUED/STARTING/STARTED run and folds

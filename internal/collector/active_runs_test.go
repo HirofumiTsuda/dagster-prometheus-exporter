@@ -154,6 +154,16 @@ func TestCollectActiveRunsTracksMaxElapsedPerGroup(t *testing.T) {
 	assert.True(t, sawDuration, "expected a dagster_active_run_duration_seconds series")
 }
 
+func TestElapsedSinceIsNeverNegative(t *testing.T) {
+	now := time.Now()
+	// The exporter's clock can sit behind Dagster's, which puts updateTime in
+	// the future. A threshold alert on the duration would never fire on a
+	// negative value, and a dashboard would show nonsense.
+	run := Run{UpdateTime: float64(now.Add(2 * time.Minute).Unix())}
+
+	assert.Equal(t, float64(0), elapsedSince(run, now))
+}
+
 func TestCollectActiveRunsAlsoTracksConcurrencyKeyBacklog(t *testing.T) {
 	call := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
