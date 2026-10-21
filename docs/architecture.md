@@ -40,3 +40,9 @@ Pruning doesn't act on a job's first absence from that set. Because `repositorie
 Fetching completed runs is incremental, not a full re-scan every cycle: after the first scrape (which backfills `LOOKBACK_WINDOW_MINUTES`), each subsequent scrape only asks Dagster for runs updated since the last-seen watermark (minus a small safety margin, to tolerate a run's DB write committing slightly after its `updateTime`).
 
 Any single fetch — the initial backfill or an unusually large batch of updates — pages through `runsOrError` via cursor (`RUNS_PAGE_SIZE` per page) and folds each page into the in-memory counters as it arrives, rather than buffering the full result set in memory first.
+
+## No retries within a scrape
+
+A failed GraphQL call is not retried inside the scrape. The collector returns the error, `dagster_exporter_last_scrape_success` reads `0` for that collector and `dagster_exporter_scrape_errors_total` goes up, and the next attempt comes one interval later (15s by default). `/metrics` keeps serving the last known state in the meantime.
+
+This is deliberate, because waiting costs nothing. The completed-runs fetch only moves its watermark after every page has been folded in, so after a failure the next scrape asks again from the same point, and runs that were already counted are skipped by the dedup cache. A retry inside the scrape would only bring the next attempt forward by a few seconds, and it would spend part of `DAGSTER_SCRAPING_TIMEOUT_SECONDS` asking a Dagster that has just failed to answer. What a single connection reset costs is one stalled interval, shown as `dagster_exporter_last_scrape_success` at `0` until the next scrape succeeds.
