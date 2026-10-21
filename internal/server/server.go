@@ -50,6 +50,10 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	if cfg.GraphQLRootCAs != nil {
+		collector.SetRootCAs(cfg.GraphQLRootCAs)
+	}
+
 	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
 	c.SeedScrapeHealth(config.CollectorNames)
 	if cfg.Debug {
