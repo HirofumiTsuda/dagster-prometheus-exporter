@@ -3,6 +3,7 @@ package collector
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -353,6 +354,28 @@ func TestGraphQLTopLevelErrorsAreReported(t *testing.T) {
 				"the GraphQL error message should survive decoding through the embedded struct")
 		})
 	}
+}
+
+func TestDoGraphQLTrustsOnlyTheConfiguredCA(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"data": {"repositoriesOrError": {"__typename": "RepositoryConnection", "nodes": []}}}`))
+		assert.NoError(t, err)
+	}))
+	defer ts.Close()
+	client := dagsterClient{endpoint: ts.URL}
+
+	_, err := getDefinitionsRoster(t.Context(), getDefinitionsRosterRequest(), client)
+	require.Error(t, err, "a server whose certificate no trusted CA signed should be refused")
+	assert.Contains(t, err.Error(), "certificate")
+
+	pool := x509.NewCertPool()
+	pool.AddCert(ts.Certificate())
+	SetRootCAs(pool)
+	t.Cleanup(func() { SetRootCAs(nil) })
+
+	_, err = getDefinitionsRoster(t.Context(), getDefinitionsRosterRequest(), client)
+	assert.NoError(t, err, "the same server should be accepted once its CA is configured")
 }
 
 func captureLog(t *testing.T) *bytes.Buffer {

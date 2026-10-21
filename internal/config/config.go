@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/x509"
 	"fmt"
 	"log"
 	"math"
@@ -54,6 +55,11 @@ type Config struct {
 	// assetNodes.staleStatus. It is "disabled" here and in the collector so
 	// that the zero value is the default behavior in both.
 	AssetStaleStatusDisabled bool
+	// GraphQLRootCAs is the pool the GraphQL client trusts, set from
+	// DAGSTER_GRAPHQL_CA_FILE: the system roots plus the certificates in that
+	// file. It is nil when the variable is unset, which leaves the client on
+	// the system roots.
+	GraphQLRootCAs *x509.CertPool
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -198,6 +204,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	graphQLRootCAs, err := loadGraphQLRootCAs()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
@@ -211,7 +222,41 @@ func Load() (*Config, error) {
 		Collectors:                   collectors,
 		Debug:                        debug,
 		AssetStaleStatusDisabled:     !assetStaleStatus,
+		GraphQLRootCAs:               graphQLRootCAs,
 	}, nil
+}
+
+// loadGraphQLRootCAs builds the trust pool for DAGSTER_GRAPHQL_CA_FILE, a PEM
+// file of the certificates that sign the GraphQL endpoint's certificate, for
+// an endpoint served under a private CA. It returns nil when the variable is
+// unset.
+//
+// The file is added to the system roots rather than replacing them, so an
+// endpoint behind a public CA keeps working with the same setting.
+//
+// There is no option to skip verification. The Dagster+ token goes out on
+// every request, so an unverified connection would hand it to anyone on the
+// path, and a CA file fixes the same problem without that cost.
+//
+// A bad file fails here, at startup, with the variable named, instead of as a
+// TLS error on every scrape.
+func loadGraphQLRootCAs() (*x509.CertPool, error) {
+	path := os.Getenv("DAGSTER_GRAPHQL_CA_FILE")
+	if path == "" {
+		return nil, nil //nolint:nilnil // unset means "use the system roots", not an error
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DAGSTER_GRAPHQL_CA_FILE value: %w", err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("invalid DAGSTER_GRAPHQL_CA_FILE value: %q contains no PEM certificate", path)
+	}
+	return pool, nil
 }
 
 // loadCollectorSchedules resolves every collector's interval and timeout:
