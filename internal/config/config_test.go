@@ -2,8 +2,13 @@ package config
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +25,7 @@ var configEnvVars = []string{
 	"PORT",
 	"DAGSTER_GRAPHQL_ENDPOINT",
 	"DAGSTER_CLOUD_API_TOKEN",
+	"DAGSTER_GRAPHQL_CA_FILE",
 	"DAGSTER_SCRAPING_INTERVAL_SECONDS",
 	"DAGSTER_SCRAPING_TIMEOUT_SECONDS",
 	"RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES",
@@ -309,4 +315,61 @@ func TestLoadAssetStaleStatusEnabled(t *testing.T) {
 	setEnv(t, map[string]string{"ASSET_STALE_STATUS_ENABLED": "flase"})
 	_, err := Load()
 	require.ErrorContains(t, err, "ASSET_STALE_STATUS_ENABLED")
+}
+
+// writeCAFile writes the certificate of a throwaway TLS server to a PEM file,
+// and returns its path and the certificate.
+func writeCAFile(t *testing.T) (string, *x509.Certificate) {
+	t.Helper()
+	ts := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(ts.Close)
+	cert := ts.Certificate()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	data := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+	return path, cert
+}
+
+func TestLoadTrustsTheCAInDagsterGraphQLCAFile(t *testing.T) {
+	setEnv(t, nil)
+	path, cert := writeCAFile(t)
+	t.Setenv("DAGSTER_GRAPHQL_CA_FILE", path)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.GraphQLRootCAs)
+	_, err = cert.Verify(x509.VerifyOptions{Roots: cfg.GraphQLRootCAs, DNSName: "example.com"})
+	assert.NoError(t, err, "a certificate from the file should be trusted")
+}
+
+func TestLoadLeavesTheSystemRootsAloneWithoutACAFile(t *testing.T) {
+	setEnv(t, nil)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	assert.Nil(t, cfg.GraphQLRootCAs)
+}
+
+func TestLoadRejectsAnUnusableCAFile(t *testing.T) {
+	notPEM := filepath.Join(t.TempDir(), "not-a-cert.pem")
+	require.NoError(t, os.WriteFile(notPEM, []byte("this is not a certificate\n"), 0o600))
+
+	tests := map[string]string{
+		"missing file":              filepath.Join(t.TempDir(), "absent.pem"),
+		"file without certificates": notPEM,
+	}
+	for name, path := range tests {
+		t.Run(name, func(t *testing.T) {
+			setEnv(t, nil)
+			t.Setenv("DAGSTER_GRAPHQL_CA_FILE", path)
+
+			_, err := Load()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "DAGSTER_GRAPHQL_CA_FILE",
+				"the error should name the variable that is wrong")
+		})
+	}
 }
