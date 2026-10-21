@@ -355,6 +355,49 @@ func TestGraphQLTopLevelErrorsAreReported(t *testing.T) {
 	}
 }
 
+func TestGraphQLReportsEveryTopLevelError(t *testing.T) {
+	const body = `{"data": {}, "errors": [{"message": "first problem"}, {"message": "second problem"}]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(body))
+		assert.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	_, err := getDefinitionsRoster(t.Context(), getDefinitionsRosterRequest(), dagsterClient{endpoint: ts.URL})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "first problem")
+	assert.Contains(t, err.Error(), "second problem",
+		"a response with several errors should not look like it had only one")
+}
+
+func TestDoGraphQLRejectsAResponseBodyOverTheLimit(t *testing.T) {
+	original := maxResponseBytes
+	maxResponseBytes = 1 << 10
+	t.Cleanup(func() { maxResponseBytes = original })
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A valid-looking document that never ends, as a misconfigured
+		// endpoint that streams would produce.
+		_, _ = w.Write([]byte(`{"data": {"padding": "`))
+		chunk := bytes.Repeat([]byte("x"), 1<<10)
+		for range 64 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer ts.Close()
+
+	_, err := getDefinitionsRoster(t.Context(), getDefinitionsRosterRequest(), dagsterClient{endpoint: ts.URL})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds",
+		"the failure should say the body was too large, not just that decoding failed")
+}
+
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
