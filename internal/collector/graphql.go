@@ -6,6 +6,7 @@ import (
 
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -46,6 +47,14 @@ var graphQLClient = &http.Client{
 		return http.ErrUseLastResponse
 	},
 }
+
+// maxResponseBytes caps how much of a response doGraphQL will read. Without a
+// cap, an endpoint that streams (a misconfigured URL, or the wrong server)
+// makes the exporter allocate until the scrape deadline. The realistic worst
+// case is a page of RUNS_PAGE_SIZE runs, or every asset key on a very large
+// deployment, which is a few megabytes, so this is generous. A variable only
+// so a test can lower it instead of streaming tens of megabytes.
+var maxResponseBytes int64 = 64 << 20
 
 // countingReader counts the bytes read through it, so the debug log can
 // report a response's size without buffering the body.
@@ -106,10 +115,16 @@ type graphQLErrors struct {
 }
 
 func (e *graphQLErrors) err() error {
-	if len(e.Errors) > 0 {
-		return fmt.Errorf("graphql error: %s", e.Errors[0].Message)
+	if len(e.Errors) == 0 {
+		return nil
 	}
-	return nil
+	// All of them: a query can fail in several places at once, and the first
+	// message alone makes that look like a single problem.
+	messages := make([]string, len(e.Errors))
+	for i, graphQLError := range e.Errors {
+		messages[i] = graphQLError.Message
+	}
+	return fmt.Errorf("graphql error: %s", strings.Join(messages, "; "))
 }
 
 // graphQLResponse is implemented by every response type, via the
@@ -195,12 +210,15 @@ func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClien
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body = resp.Body
+	body = http.MaxBytesReader(nil, resp.Body, maxResponseBytes)
 	if client.debug {
-		counter = &countingReader{r: resp.Body}
+		counter = &countingReader{r: body}
 		body = counter
 	}
 	if err := json.NewDecoder(body).Decode(out); err != nil {
+		if tooLarge, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return fmt.Errorf("response body exceeds %d bytes; is DAGSTER_GRAPHQL_ENDPOINT pointing at a Dagster GraphQL endpoint?", tooLarge.Limit)
+		}
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
