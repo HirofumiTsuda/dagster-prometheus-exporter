@@ -1,6 +1,8 @@
 module github.com/HirofumiTsuda/dagster-prometheus-exporter
 
-go 1.26.5
+go 1.26.0
+
+toolchain go1.26.5
 
 require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
