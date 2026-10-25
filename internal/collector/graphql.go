@@ -2,9 +2,11 @@ package collector
 
 import (
 	"context"
+	"crypto/tls"
 	_ "embed"
 
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +57,23 @@ var graphQLClient = &http.Client{
 // deployment, which is a few megabytes, so this is generous. A variable only
 // so a test can lower it instead of streaming tens of megabytes.
 var maxResponseBytes int64 = 64 << 20
+
+// SetRootCAs makes the GraphQL client trust pool, for a Dagster endpoint
+// served under a private CA (DAGSTER_GRAPHQL_CA_FILE). A nil pool puts the
+// system roots back. The caller passes a pool that already holds the system
+// roots, so a public CA keeps working.
+//
+// It replaces the client's transport, so call it before the first request,
+// not while scrapes are running.
+func SetRootCAs(pool *x509.CertPool) {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return
+	}
+	transport = transport.Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	graphQLClient.Transport = transport
+}
 
 // countingReader counts the bytes read through it, so the debug log can
 // report a response's size without buffering the body.
