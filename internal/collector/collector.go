@@ -37,6 +37,7 @@ type DagsterCollector struct {
 	opPoolAssignedStepsDesc               *prometheus.Desc
 	opPoolPendingStepsDesc                *prometheus.Desc
 	opPoolLimitDesc                       *prometheus.Desc
+	jobTagsDesc                           *prometheus.Desc
 
 	mutex                 sync.Mutex
 	activeRunAggregates   map[ActiveRunKey]activeRunAggregate
@@ -60,6 +61,10 @@ type DagsterCollector struct {
 	daemonHealth             map[string]daemonHealthEntry
 	assetStatus              map[string]assetStatusEntry
 	opPoolConcurrency        map[string]opPoolConcurrencyEntry
+	// jobTagKeys is set by SetJobTagLabels and never changes after that.
+	// jobTags holds each job's values for those keys, in the same order.
+	jobTagKeys []string
+	jobTags    map[JobKey][]string
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -248,6 +253,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"pool", "using_default_limit"},
 			nil,
 		),
+		jobTagsDesc:                  newJobTagsDesc(nil),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		jobAbsenceStreak:             make(map[JobKey]int),
@@ -297,6 +303,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.opPoolAssignedStepsDesc
 	ch <- c.opPoolPendingStepsDesc
 	ch <- c.opPoolLimitDesc
+	ch <- c.jobTagsDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -314,6 +321,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectDaemonHealth(c, ch)
 	reflectAssetStatus(c, ch)
 	reflectOpPoolConcurrency(c, ch)
+	reflectJobTags(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

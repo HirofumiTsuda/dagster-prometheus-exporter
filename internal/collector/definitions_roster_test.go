@@ -166,6 +166,7 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 	defer ts.Close()
 
 	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
 	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
 
 	key := JobKey{JobName: "job_a", LocationName: "loc_a"}
@@ -184,6 +185,8 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 		"a broken code location must not reset the job's completed-run counter")
 	assert.Contains(t, c.lastRunStatus, key,
 		"a broken code location must not silence the job's last-run status")
+	assert.Contains(t, c.jobTags, key,
+		"a broken code location must not drop the job's tags out of alerts joined on them")
 
 	// The location loads again, this time genuinely without job_a.
 	c.codeLocationLoadError = map[string]bool{"loc_a": false}
@@ -193,6 +196,7 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 
 	assert.NotContains(t, c.trackedCompletedRunKeys, key)
 	assert.NotContains(t, c.lastRunStatus, key)
+	assert.NotContains(t, c.jobTags, key)
 }
 
 func TestCollectDefinitionsRosterReturnsErrorOnServerError(t *testing.T) {

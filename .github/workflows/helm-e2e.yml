@@ -232,6 +232,12 @@ jobs:
           echo "$METRICS" | grep -qF 'dagster_code_location_load_error{location="dev-dagster-workspace"} 0' \
             || { echo "::error::dev-dagster-workspace did not report dagster_code_location_load_error=0"; exit 1; }
 
+          # The family being present only proves JOB_TAG_LABELS was read; this
+          # checks a real job definition tag made it through, sanitized.
+          echo "--- job_tags: heavy_job's dagster/concurrency_key tag ---"
+          echo "$METRICS" | grep -qF 'dagster_job_tags{job_name="heavy_job",location="dev-dagster-workspace",tag_dagster_concurrency_key="heavy_limit"} 1' \
+            || { echo "::error::heavy_job did not report its dagster/concurrency_key tag on dagster_job_tags"; exit 1; }
+
           kill "$PORT_FORWARD_PID"
 
       - name: Dump pod state for debugging

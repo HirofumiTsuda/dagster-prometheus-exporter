@@ -8,3 +8,6 @@ image:
 
 env:
   DAGSTER_GRAPHQL_ENDPOINT: http://dagster.default.svc.cluster.local:3000/graphql
+  # The fixture jobs' existing tag (dev/dagster_workspace/job.py), so
+  # dagster_job_tags has series, and its "/" shows the label-name sanitizing.
+  JOB_TAG_LABELS: dagster/concurrency_key

@@ -34,6 +34,7 @@ var configEnvVars = []string{
 	"RUNS_PAGE_SIZE",
 	"LOG_LEVEL",
 	"ASSET_STALE_STATUS_ENABLED",
+	"JOB_TAG_LABELS",
 }
 
 func init() {
@@ -328,6 +329,29 @@ func writeCAFile(t *testing.T) (string, *x509.Certificate) {
 	data := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 	return path, cert
+}
+
+func TestLoadJobTagLabels(t *testing.T) {
+	setEnv(t, nil)
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.JobTagLabels)
+
+	setEnv(t, map[string]string{"JOB_TAG_LABELS": "owner, team-name,,dagster/priority"})
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"owner":            "tag_owner",
+		"team-name":        "tag_team_name",
+		"dagster/priority": "tag_dagster_priority",
+	}, cfg.JobTagLabels)
+
+	// Keys that would come out as the same label, including a repeated key.
+	for _, value := range []string{"team-name,team_name", "owner,owner"} {
+		setEnv(t, map[string]string{"JOB_TAG_LABELS": value})
+		_, err = Load()
+		require.ErrorContains(t, err, "JOB_TAG_LABELS", value)
+	}
 }
 
 func TestLoadTrustsTheCAInDagsterGraphQLCAFile(t *testing.T) {

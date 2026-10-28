@@ -9,6 +9,12 @@ query GetDefinitionsRoster {
         }
         jobs {
           name
+          # The job definition's tags (tags= on @job or define_asset_job),
+          # for dagster_job_tags. Dagster leaves hidden .dagster/ tags out.
+          tags {
+            key
+            value
+          }
         }
         schedules {
           name

@@ -434,6 +434,10 @@ type GraphQLDefinitionsRosterResponse struct {
 				} `json:"location"`
 				Jobs []struct {
 					Name string `json:"name"`
+					Tags []struct {
+						Key   string `json:"key"`
+						Value string `json:"value"`
+					} `json:"tags"`
 				} `json:"jobs"`
 				Schedules []struct {
 					Name          string `json:"name"`

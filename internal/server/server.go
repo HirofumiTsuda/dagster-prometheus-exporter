@@ -62,6 +62,9 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	if cfg.AssetStaleStatusDisabled {
 		c.DisableAssetStaleStatus()
 	}
+	if len(cfg.JobTagLabels) > 0 {
+		c.SetJobTagLabels(cfg.JobTagLabels)
+	}
 	prometheus.MustRegister(c)
 	registerBuildInfo()
 

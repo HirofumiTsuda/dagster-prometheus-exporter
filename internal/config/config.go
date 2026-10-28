@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,10 @@ type Config struct {
 	// file. It is nil when the variable is unset, which leaves the client on
 	// the system roots.
 	GraphQLRootCAs *x509.CertPool
+	// JobTagLabels maps each job tag key listed in JOB_TAG_LABELS to the
+	// label it is exported as on dagster_job_tags. It is empty when the
+	// variable is unset, and dagster_job_tags then has no series.
+	JobTagLabels map[string]string
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -209,6 +214,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	jobTagLabels, err := loadJobTagLabels()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
@@ -223,7 +233,38 @@ func Load() (*Config, error) {
 		Debug:                        debug,
 		AssetStaleStatusDisabled:     !assetStaleStatus,
 		GraphQLRootCAs:               graphQLRootCAs,
+		JobTagLabels:                 jobTagLabels,
 	}, nil
+}
+
+// invalidLabelNameChars matches every character a Prometheus label name can't
+// contain.
+var invalidLabelNameChars = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+// loadJobTagLabels reads JOB_TAG_LABELS, a comma-separated list of Dagster job
+// tag keys, and maps each key to its label on dagster_job_tags: "tag_" plus
+// the key with every character a label name can't contain replaced by "_".
+// That is kube-state-metrics' convention for kube_pod_labels, so owner becomes
+// tag_owner and dagster/priority becomes tag_dagster_priority.
+//
+// Two keys that come out as the same label (team-name and team_name) are
+// rejected instead of one silently shadowing the other.
+func loadJobTagLabels() (map[string]string, error) {
+	labels := make(map[string]string)
+	keyByLabel := make(map[string]string)
+	for key := range strings.SplitSeq(os.Getenv("JOB_TAG_LABELS"), ",") {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		label := "tag_" + invalidLabelNameChars.ReplaceAllString(key, "_")
+		if other, ok := keyByLabel[label]; ok {
+			return nil, fmt.Errorf("invalid JOB_TAG_LABELS value: tags %q and %q would both be exported as label %q", other, key, label)
+		}
+		keyByLabel[label] = key
+		labels[key] = label
+	}
+	return labels, nil
 }
 
 // loadGraphQLRootCAs builds the trust pool for DAGSTER_GRAPHQL_CA_FILE, a PEM
