@@ -59,7 +59,7 @@ dagster_job_tags{tag_owner="data-team"}
 
 The tags come from the job definition (`tags=` on `@job` or `define_asset_job`; `run_tags=` are not included), read from the definitions roster, not from individual runs, so a run launched with extra tags doesn't change them. A job without one of the selected tags reports it as an empty label, which PromQL treats the same as a missing one. Dagster's API never returns hidden tags (prefixed `.dagster/`), so those can't be selected.
 
-Each label name is `tag_` plus the key, with any character a label name can't contain replaced by `_`: `owner` becomes `tag_owner`, `dagster/priority` becomes `tag_dagster_priority`. Two keys that come out as the same label (`team-name` and `team_name`) are rejected at startup instead of one shadowing the other.
+Each label name is `tag_` plus the key, with any character a label name can't contain replaced by `_`: `owner` becomes `tag_owner`, `dagster/priority` becomes `tag_dagster_priority`. A repeated key is ignored. Two different keys that come out as the same label (`team-name` and `team_name`) are rejected at startup instead of one shadowing the other.
 
 A job missing from the roster keeps its series for the same grace period as `dagster_completed_runs_total`, and indefinitely while its code location has `dagster_code_location_load_error` set to `1`, so a broken deploy doesn't drop its jobs out of alerts joined on this metric.
 

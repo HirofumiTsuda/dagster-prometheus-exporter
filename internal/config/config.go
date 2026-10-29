@@ -247,14 +247,15 @@ var invalidLabelNameChars = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 // That is kube-state-metrics' convention for kube_pod_labels, so owner becomes
 // tag_owner and dagster/priority becomes tag_dagster_priority.
 //
-// Two keys that come out as the same label (team-name and team_name) are
-// rejected instead of one silently shadowing the other.
+// A repeated key is skipped. Two different keys that come out as the same label
+// (team-name and team_name) are rejected instead of one silently shadowing the
+// other.
 func loadJobTagLabels() (map[string]string, error) {
 	labels := make(map[string]string)
 	keyByLabel := make(map[string]string)
 	for key := range strings.SplitSeq(os.Getenv("JOB_TAG_LABELS"), ",") {
 		key = strings.TrimSpace(key)
-		if key == "" {
+		if _, seen := labels[key]; seen || key == "" {
 			continue
 		}
 		label := "tag_" + invalidLabelNameChars.ReplaceAllString(key, "_")

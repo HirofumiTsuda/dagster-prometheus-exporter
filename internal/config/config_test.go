@@ -346,12 +346,14 @@ func TestLoadJobTagLabels(t *testing.T) {
 		"dagster/priority": "tag_dagster_priority",
 	}, cfg.JobTagLabels)
 
-	// Keys that would come out as the same label, including a repeated key.
-	for _, value := range []string{"team-name,team_name", "owner,owner"} {
-		setEnv(t, map[string]string{"JOB_TAG_LABELS": value})
-		_, err = Load()
-		require.ErrorContains(t, err, "JOB_TAG_LABELS", value)
-	}
+	setEnv(t, map[string]string{"JOB_TAG_LABELS": "owner, owner"})
+	cfg, err = Load()
+	require.NoError(t, err, "a repeated key is not ambiguous")
+	assert.Equal(t, map[string]string{"owner": "tag_owner"}, cfg.JobTagLabels)
+
+	setEnv(t, map[string]string{"JOB_TAG_LABELS": "team-name,team_name"})
+	_, err = Load()
+	require.ErrorContains(t, err, "JOB_TAG_LABELS", "different keys that come out as the same label")
 }
 
 func TestLoadTrustsTheCAInDagsterGraphQLCAFile(t *testing.T) {
