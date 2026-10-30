@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/HirofumiTsuda/dagster-prometheus-exporter/internal/version"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -20,8 +19,4 @@ func newBuildInfoGauge(ver, commit string) prometheus.Collector {
 	)
 	g.WithLabelValues(ver, commit).Set(1)
 	return g
-}
-
-func registerBuildInfo() {
-	prometheus.MustRegister(newBuildInfoGauge(version.Version, version.Commit))
 }
