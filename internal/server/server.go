@@ -9,9 +9,6 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Every endpoint here is a bodiless GET answered from memory, except /readyz,
@@ -65,11 +62,9 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	if len(cfg.JobTagLabels) > 0 {
 		c.SetJobTagLabels(cfg.JobTagLabels)
 	}
-	prometheus.MustRegister(c)
-	registerBuildInfo()
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", metricsHandler(newRegistry(c)))
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.Handle("/readyz", newReadyzHandler(cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.DagsterScrapingTimeout))
 
