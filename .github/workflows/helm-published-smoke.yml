@@ -39,12 +39,12 @@ jobs:
       # chart, so it needs none of the repo's code. Without a checkout mise
       # sees no config, installs nothing, and the runner's own helm is used
       # (#159).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .tool-versions
           sparse-checkout-cone-mode: false
 
-      - uses: helm/kind-action@v1
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           cluster_name: dagster-exporter-published-smoke
 
@@ -52,7 +52,7 @@ jobs:
       # development run the same one. azure/setup-helm defaults to "latest",
       # which is not reproducible and drifted a major version away from the
       # helm used for local chart testing.
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
 
       - name: Check helm is the version pinned in .tool-versions
         run: |
