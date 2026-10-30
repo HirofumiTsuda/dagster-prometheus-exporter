@@ -25,3 +25,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: {{ include "dagster-prometheus-exporter.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+
+{{/*
+Where the CA bundle from dagsterGraphqlCA is mounted, and the file inside it
+that DAGSTER_GRAPHQL_CA_FILE points at. Renders nothing when no source is set.
+Also rejects a source given twice, which has no sensible meaning.
+*/}}
+{{- define "dagster-prometheus-exporter.graphqlCAFile" -}}
+{{- $ca := .Values.dagsterGraphqlCA -}}
+{{- if and $ca.existingSecret $ca.existingConfigMap -}}
+{{- fail "set dagsterGraphqlCA.existingSecret or dagsterGraphqlCA.existingConfigMap, not both" -}}
+{{- end -}}
+{{- if or $ca.existingSecret $ca.existingConfigMap -}}
+{{- printf "/etc/dagster-prometheus-exporter/ca/%s" $ca.key -}}
+{{- end -}}
+{{- end -}}

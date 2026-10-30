@@ -59,6 +59,22 @@ dagsterCloudApiToken:
   existingSecret: ""
   key: token
 
+# CA bundle for a GraphQL endpoint served under a private CA (an internal
+# ingress, say). Name a Secret or a ConfigMap that already holds the PEM file
+# under `key`; the chart mounts just that key read-only and sets
+# DAGSTER_GRAPHQL_CA_FILE to it. The bundle is added to the system roots, so a
+# public CA keeps working. Set one of the two, not both, and not
+# env.DAGSTER_GRAPHQL_CA_FILE as well: each is rejected at render time.
+#
+# A CA certificate is public, so a ConfigMap is as valid as a Secret; trust-manager
+# publishes its bundles as ConfigMaps by default. The chart never creates the
+# object. Like the token above, a change to its contents is not covered by
+# checksum/config, so restart the pod after rotating the CA.
+dagsterGraphqlCA:
+  existingSecret: ""
+  existingConfigMap: ""
+  key: ca.crt
+
 resources: {}
 
 podAnnotations: {}

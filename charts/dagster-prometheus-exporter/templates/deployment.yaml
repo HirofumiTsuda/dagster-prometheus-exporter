@@ -67,6 +67,31 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if include "dagster-prometheus-exporter.graphqlCAFile" . }}
+          volumeMounts:
+            - name: graphql-ca
+              mountPath: /etc/dagster-prometheus-exporter/ca
+              readOnly: true
+          {{- end }}
+      {{- with .Values.dagsterGraphqlCA }}
+      {{- if or .existingSecret .existingConfigMap }}
+      volumes:
+        - name: graphql-ca
+          {{- if .existingSecret }}
+          secret:
+            secretName: {{ .existingSecret }}
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+          {{- else }}
+          configMap:
+            name: {{ .existingConfigMap }}
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+          {{- end }}
+      {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
