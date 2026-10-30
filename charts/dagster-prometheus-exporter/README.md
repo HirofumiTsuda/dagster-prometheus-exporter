@@ -34,6 +34,8 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `env` | `{}` | Environment variables passed to the exporter via a ConfigMap (`envFrom`). Keys match `internal/config/config.go` exactly. Don't put `DAGSTER_CLOUD_API_TOKEN` here; use `dagsterCloudApiToken` below. |
 | `dagsterCloudApiToken.existingSecret` | `""` | Name of a Secret holding a Dagster+ API token, passed to the exporter as `DAGSTER_CLOUD_API_TOKEN`. Leave empty for OSS Dagster. See [Dagster+](#dagster). |
 | `dagsterCloudApiToken.key` | `token` | Key within that Secret. |
+| `dagsterGraphqlCA.existingSecret` / `dagsterGraphqlCA.existingConfigMap` | `""` | Name of a Secret or a ConfigMap holding a PEM file of CA certificates, for a GraphQL endpoint served under a private CA. The chart mounts that one key read-only and sets `DAGSTER_GRAPHQL_CA_FILE` to it. Set one of the two, not both. See [Private CA](#private-ca). |
+| `dagsterGraphqlCA.key` | `ca.crt` | Key within that Secret or ConfigMap. |
 | `resources` | `{}` | Standard pod resource requests/limits. |
 | `podSecurityContext` | `runAsNonRoot`, uid/gid `65532`, `RuntimeDefault` seccomp | Pod-level security context, rendered with `toYaml`. Matches the image's numeric user so `runAsNonRoot` can be enforced. Set a key to `null` to omit it, or the whole map to `null` for no block. |
 | `securityContext` | non-root, read-only root filesystem, no privilege escalation, drop all capabilities, `RuntimeDefault` seccomp | Container-level security context, rendered with `toYaml`. The exporter writes nothing to disk, so the read-only root filesystem is safe. Lists such as `capabilities.drop` are replaced, not merged: `drop: [NET_RAW]` replaces the default `[ALL]`. |
@@ -66,6 +68,22 @@ helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prom
 The token is injected with `secretKeyRef`, so it never lands in the chart's ConfigMap. The chart has no option to create the Secret from a value in `values.yaml`, since that would just move the plain-text token into the values file. Secrets managed by External Secrets, Sealed Secrets, or similar work the same way, as long as the resulting Secret has the configured key. Setting `env.DAGSTER_CLOUD_API_TOKEN` as well is rejected at render time.
 
 See the main README's [Dagster+ section](../../README.md#dagster) for the endpoint format and why the timeout is raised.
+
+### Private CA
+
+An endpoint served under a private CA (an internal ingress, a corporate proxy) needs the exporter to trust that CA. Put the PEM file in a Secret or a ConfigMap you already manage, then point the chart at it:
+
+```sh
+kubectl create secret generic corp-ca --from-file=ca.crt=./corp-ca.pem
+
+helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
+  --set env.DAGSTER_GRAPHQL_ENDPOINT=https://dagster.corp.example/graphql \
+  --set dagsterGraphqlCA.existingSecret=corp-ca
+```
+
+The chart mounts only the configured `key` (default `ca.crt`), read-only, and sets `DAGSTER_GRAPHQL_CA_FILE` to it. The certificates are added to the system roots, so a public CA keeps working. A CA certificate is public, so a ConfigMap works as well as a Secret: use `dagsterGraphqlCA.existingConfigMap`, for example for a bundle that trust-manager publishes. Setting both, or setting `env.DAGSTER_GRAPHQL_CA_FILE` as well, is rejected at render time. There is deliberately no option to skip certificate verification.
+
+A file with no certificate in it makes the pod fail at startup with `invalid DAGSTER_GRAPHQL_CA_FILE value`, and a `key` the Secret or ConfigMap lacks leaves the pod in `ContainerCreating` with a `FailedMount` event.
 
 ### Alerts (`alerts.enabled`)
 
@@ -103,4 +121,4 @@ alerts:
 
 - `readinessProbe`/`livenessProbe` are set to `/healthz`, not `/readyz` — `/healthz` doesn't depend on Dagster connectivity, so a Dagster outage doesn't pull the exporter pod out of the Service's endpoints. Doing so would stop Prometheus from scraping it at all, defeating the point of the exporter continuing to serve last-known state during an outage (see the main README's Motivation section).
 - A `checksum/config` pod annotation triggers a rollout whenever `env` changes, since `envFrom`-injected variables are otherwise only read once at container start.
-- That checksum doesn't cover the Secret referenced by `dagsterCloudApiToken.existingSecret`. After rotating the token, restart the pod (`kubectl rollout restart deployment/<name>`) or use a tool like Reloader.
+- That checksum doesn't cover the Secret referenced by `dagsterCloudApiToken.existingSecret`, nor the Secret or ConfigMap referenced by `dagsterGraphqlCA`. After rotating the token or the CA, restart the pod (`kubectl rollout restart deployment/<name>`) or use a tool like Reloader.

@@ -9,3 +9,9 @@ data:
   {{- range $key, $value := .Values.env }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+  {{- with include "dagster-prometheus-exporter.graphqlCAFile" . }}
+  {{- if hasKey $.Values.env "DAGSTER_GRAPHQL_CA_FILE" }}
+  {{- fail "set the CA via dagsterGraphqlCA or env.DAGSTER_GRAPHQL_CA_FILE, not both (dagsterGraphqlCA mounts the file and sets the variable itself)" }}
+  {{- end }}
+  DAGSTER_GRAPHQL_CA_FILE: {{ . | quote }}
+  {{- end }}

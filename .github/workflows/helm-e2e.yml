@@ -172,9 +172,20 @@ jobs:
 
       - name: Install the exporter chart
         run: |
+          # A throwaway CA, only to prove dagsterGraphqlCA mounts it where the
+          # exporter reads it: the exporter refuses to start on a file with no
+          # certificate in it, so --wait passing means it was read. The CA does
+          # not sign the e2e Dagster, which is plain HTTP.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=e2e-ca" \
+            -keyout /dev/null -out "$RUNNER_TEMP/e2e-ca.crt"
+          kubectl create secret generic e2e-ca --from-file=ca.crt="$RUNNER_TEMP/e2e-ca.crt"
           helm install exporter-e2e charts/dagster-prometheus-exporter \
             -f dev/kubernetes/exporter-e2e-values.yaml \
+            --set dagsterGraphqlCA.existingSecret=e2e-ca \
             --wait --timeout=120s
+          kubectl exec deployment/exporter-e2e-dagster-prometheus-exporter -- env \
+            | grep -qx 'DAGSTER_GRAPHQL_CA_FILE=/etc/dagster-prometheus-exporter/ca/ca.crt' \
+            || { echo "::error::the exporter pod does not have DAGSTER_GRAPHQL_CA_FILE set by dagsterGraphqlCA"; exit 1; }
 
       - name: Assert /readyz and every metric family reports real data
         run: |
