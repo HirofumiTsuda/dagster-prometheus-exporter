@@ -32,7 +32,7 @@ func fakeDagster(t *testing.T) *httptest.Server {
 		var out string
 		switch {
 		case strings.Contains(query, "repositoriesOrError"):
-			out = fmt.Sprintf(`{"data":{"repositoriesOrError":{"__typename":"RepositoryConnection","nodes":[{"name":"repo","location":{"name":"loc_a"},"jobs":[{"name":"job_a"}],
+			out = fmt.Sprintf(`{"data":{"repositoriesOrError":{"__typename":"RepositoryConnection","nodes":[{"name":"repo","location":{"name":"loc_a"},"jobs":[{"name":"job_a","tags":[{"key":"owner","value":"team_a"}]}],
 				"schedules":[{"name":"sched_a","cronSchedule":"* * * * *","scheduleState":{"status":"RUNNING","ticks":[{"status":"SUCCESS","timestamp":%d}]}}],
 				"sensors":[{"name":"sens_a","sensorState":{"status":"RUNNING","ticks":[{"status":"SUCCESS","timestamp":%d}]}}]}]}}}`, now, now)
 		case strings.Contains(query, "workspaceOrError"):
@@ -66,6 +66,8 @@ func TestMetricsPassPromlint(t *testing.T) {
 	ts := fakeDagster(t)
 	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
 	c.SeedScrapeHealth(config.CollectorNames)
+	// dagster_job_tags has no series until JOB_TAG_LABELS selects a tag.
+	c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
 	scrapeDagster(t.Context(), c)
 
 	reg := prometheus.NewPedanticRegistry()

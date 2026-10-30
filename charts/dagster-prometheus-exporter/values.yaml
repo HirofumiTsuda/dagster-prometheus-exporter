@@ -42,6 +42,8 @@ env: {}
   # ASSET_STATUS_SCRAPING_TIMEOUT_SECONDS: "120"
   # RUNS_PAGE_SIZE: "500"
   # RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES: "5"
+  # Job tags to export as tag_<key> labels on dagster_job_tags:
+  # JOB_TAG_LABELS: "owner"
 
 # Dagster+ API token, read from a Secret you create yourself, e.g.
 #   kubectl create secret generic dagster-cloud-api-token --from-literal=token=<token>

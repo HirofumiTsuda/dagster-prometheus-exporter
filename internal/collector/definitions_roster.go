@@ -44,6 +44,7 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	knownJobs := buildKnownJobs(resp)
 	scheduleStatus, scheduleTickStatus := buildScheduleState(resp)
 	sensorStatus, sensorTickStatus := buildSensorState(resp)
+	jobTags := buildJobTags(resp, c.jobTagKeys)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -55,6 +56,17 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	c.sensorTickStatus = sensorTickStatus
 
 	retained := retainedJobs(c, knownJobs)
+
+	// A job missing from this roster keeps its tags while its other series
+	// are retained, so an alert joined on dagster_job_tags isn't silenced by
+	// the broken code location retainedJobs guards against.
+	for key, values := range c.jobTags {
+		_, inRoster := jobTags[key]
+		if _, ok := retained[key]; ok && !inRoster {
+			jobTags[key] = values
+		}
+	}
+	c.jobTags = jobTags
 
 	pruneCompletedRunsCounter(c, retained)
 	seedCompletedRunsCounter(c, knownJobs)

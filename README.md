@@ -110,6 +110,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`/`canceled`) per job, since the exporter started. |
 | `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). |
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
+| `dagster_job_tags` | Gauge | The job tags selected by `JOB_TAG_LABELS`, as `tag_<key>` labels (always `1`), for filtering or grouping the other per-job metrics by tag. No series unless `JOB_TAG_LABELS` is set. |
 | `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |
 | `dagster_daemon_last_heartbeat_timestamp_seconds` | Gauge | When each daemon last reported a heartbeat. |
 | `dagster_code_location_load_error` | Gauge | Whether a code location most recently failed to load. |
@@ -159,6 +160,8 @@ dagster_last_run_info{job_name="heavy_job",location="dev-dagster-workspace",stat
 dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 1
 
 dagster_last_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 32.34893083572388
+
+dagster_job_tags{job_name="heavy_job",location="dev-dagster-workspace",tag_dagster_concurrency_key="heavy_limit"} 1
 
 dagster_run_queue_concurrency_key_backlog{concurrency_key="heavy_limit"} 3
 
@@ -240,6 +243,15 @@ dagster_sensor_last_tick_status{status="failure"} == 1
 # assetMaterializations, which only records successful events, so a failing
 # asset looks the same as one that has simply never run)
 dagster_asset_last_materialization_status{status="failure"}
+
+# Alert: a job the data team owns has been running for over 4 hours
+# (with JOB_TAG_LABELS=owner). The per-job metrics carry no tags of their own;
+# the join brings in the job's owner tag, and group_left keeps it on the
+# result so Alertmanager can route on it.
+dagster_active_run_duration_seconds{status="started"}
+* on (job_name, location) group_left (tag_owner)
+dagster_job_tags{tag_owner="data-team"}
+> 4 * 3600
 ```
 
 ## Endpoints
@@ -330,6 +342,7 @@ All configuration is via environment variables (see `internal/config/config.go`)
 | `DAGSTER_SCRAPING_TIMEOUT_SECONDS` | `10` | Timeout for one scrape of one collector. Applies to every collector that has no `<COLLECTOR>_SCRAPING_TIMEOUT_SECONDS` override (see below). |
 | `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS`, `<COLLECTOR>_SCRAPING_TIMEOUT_SECONDS` | the global value | Per-collector override of the two settings above. `<COLLECTOR>` is one of `DEFINITIONS_ROSTER`, `ACTIVE_RUNS`, `COMPLETED_RUNS`, `CODE_LOCATION_STATUS`, `DAEMON_HEALTH`, `ASSET_STATUS`, `OP_POOL_CONCURRENCY` (the `collector` label of the self-health metrics, upper-cased). For example `ASSET_STATUS_SCRAPING_INTERVAL_SECONDS=300` polls asset state every 5 minutes while run state stays at the global 15s. Collectors run independently, so a slow one no longer delays the others. |
 | `ASSET_STALE_STATUS_ENABLED` | `true` | `true` or `false`. `false` stops the `asset_status` collector from asking Dagster for `assetNodes.staleStatus`, so `dagster_asset_stale_status` has no series. Dagster computes it one asset at a time, which took about 6ms per asset on a Dagster+ deployment: for thousands of assets it is most of `asset_status`' time. The run-based asset metrics are unaffected. See [`dagster_asset_stale_status`](docs/metrics.md#dagster_asset_stale_status-gauge). |
+| `JOB_TAG_LABELS` | _(empty)_ | Comma-separated job tag keys to export on [`dagster_job_tags`](docs/metrics.md#dagster_job_tags-gauge), e.g. `owner,team`. Each one becomes a `tag_<key>` label, with any character a label name can't contain replaced by `_` (`dagster/priority` becomes `tag_dagster_priority`). A repeated key is ignored; two different keys that come out as the same label fail at startup. Unset, `dagster_job_tags` has no series. |
 | `LOG_LEVEL` | `info` | `info` or `debug`. `debug` logs one line per GraphQL call with the operation name, duration and response size (and the number of asset keys for `GetAssetsLatestInfo`), e.g. `debug: graphql GetAssetsLatestInfo took 12.3s, response 277921 bytes, 3000 asset keys`. Asset names, queries and responses are never logged, so the output is safe to share when reporting a slow scrape. |
 | `RUNS_PAGE_SIZE` | `500` | Max runs requested per GraphQL call; larger result sets are paged through via cursor. |
 | `RUNS_UPDATED_AFTER_SAFETY_MARGIN_MINUTES` | `5` | Overlap subtracted from the incremental fetch watermark, to tolerate runs whose DB commit lands slightly after their `updateTime`. |

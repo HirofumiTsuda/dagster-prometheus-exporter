@@ -42,6 +42,27 @@ Labels: `job_name`, `location`, `status`
 
 Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`.
 
+## `dagster_job_tags` (Gauge)
+
+Labels: `job_name`, `location`, plus one `tag_<key>` per key in `JOB_TAG_LABELS`
+
+Always `1`; one series per job, with the tags `JOB_TAG_LABELS` selects as labels (the same pattern as kube-state-metrics' `kube_pod_labels`). There are no series at all while `JOB_TAG_LABELS` is unset.
+
+The other per-job metrics don't carry tags: a job can have any number of them, and they would be repeated on every series of every metric. They live on this one metric instead, and you filter or group by a tag with a join. For example, an alert on long runs of the jobs one team owns:
+
+```promql
+dagster_active_run_duration_seconds{status="started"}
+* on (job_name, location) group_left (tag_owner)
+dagster_job_tags{tag_owner="data-team"}
+> 4 * 3600
+```
+
+The tags come from the job definition (`tags=` on `@job` or `define_asset_job`; `run_tags=` are not included), read from the definitions roster, not from individual runs, so a run launched with extra tags doesn't change them. A job without one of the selected tags reports it as an empty label, which PromQL treats the same as a missing one. Dagster's API never returns hidden tags (prefixed `.dagster/`), so those can't be selected.
+
+Each label name is `tag_` plus the key, with any character a label name can't contain replaced by `_`: `owner` becomes `tag_owner`, `dagster/priority` becomes `tag_dagster_priority`. A repeated key is ignored. Two different keys that come out as the same label (`team-name` and `team_name`) are rejected at startup instead of one shadowing the other.
+
+A job missing from the roster keeps its series for the same grace period as `dagster_completed_runs_total`, and indefinitely while its code location has `dagster_code_location_load_error` set to `1`, so a broken deploy doesn't drop its jobs out of alerts joined on this metric.
+
 ## `dagster_code_location_load_error` (Gauge)
 
 Labels: `location`
