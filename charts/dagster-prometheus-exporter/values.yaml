@@ -156,13 +156,24 @@ alerts:
     jobLastRunFailed:
       enabled: true
       alert: DagsterJobLastRunFailed
-      expr: dagster_last_run_info{status="failure"} == 1
+      # Not dagster_last_run_info alone: a job that failed and is never run
+      # again (its schedule switched off, or only ever run by hand) would fire
+      # until someone noticed. A job still launched by a schedule or sensor
+      # keeps alerting until it succeeds; any other job for 24h after its
+      # failure.
+      expr: |-
+        dagster_last_run_info{status="failure"} == 1
+        and on (job_name, location)
+        (
+          dagster_job_automation_running == 1
+          or time() - dagster_last_run_end_timestamp_seconds{status="failure"} < 86400
+        )
       for: 5m
       labels:
         severity: warning
       annotations:
         summary: "Dagster job {{ $labels.job_name }} last run failed"
-        description: "The most recent completed run of job {{ $labels.job_name }} in code location {{ $labels.location }} failed."
+        description: "The most recent completed run of job {{ $labels.job_name }} in code location {{ $labels.location }} failed (its last attempt, if Dagster retried it)."
     assetMaterializationFailed:
       enabled: true
       alert: DagsterAssetMaterializationFailed
@@ -277,6 +288,25 @@ alerts:
       annotations:
         summary: "Dagster asset {{ $labels.asset_key }} hasn't been materialized recently"
         description: "Asset {{ $labels.asset_key }} hasn't been materialized in over {{ $value | humanizeDuration }}."
+    jobNoRecentSuccess:
+      # Off by default for the same reason as assetMaterializationStale: jobs
+      # run hourly, daily or weekly, so no single threshold fits every
+      # installation. Set it to your jobs' cadence before enabling, or add one
+      # rule per cadence on a tag exported through JOB_TAG_LABELS. It also
+      # catches what a failure alert can't: a run that never starts, a hung
+      # run, a retry that is never launched.
+      enabled: false
+      alert: DagsterJobNoRecentSuccess
+      expr: |-
+        (time() - dagster_last_success_timestamp_seconds > 26 * 3600)
+        and on (job_name, location)
+        dagster_job_automation_running == 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster job {{ $labels.job_name }} hasn't succeeded recently"
+        description: "Job {{ $labels.job_name }} in code location {{ $labels.location }} is launched by a schedule or sensor but hasn't finished a successful run in {{ $value | humanizeDuration }}."
     assetStale:
       # Unlike assetMaterializationStale above, this is dependency-based
       # (Dagster's own code_version comparison against upstream), not
