@@ -232,6 +232,7 @@ func TestLoadRunsTheAgentsCollectorOnlyWithADagsterPlusToken(t *testing.T) {
 	setEnv(t, nil)
 	cfg, err := Load()
 	require.NoError(t, err)
+	assert.False(t, cfg.DagsterPlus)
 	assert.NotContains(t, cfg.Collectors, "agents",
 		"open-source Dagster has no agents field, so the collector would fail every scrape")
 
@@ -244,6 +245,7 @@ func TestLoadRunsTheAgentsCollectorOnlyWithADagsterPlusToken(t *testing.T) {
 	})
 	cfg, err = Load()
 	require.NoError(t, err)
+	assert.True(t, cfg.DagsterPlus)
 	assert.Equal(t, CollectorSchedule{Interval: 60 * time.Second, Timeout: 20 * time.Second}, cfg.Collectors["agents"])
 	assert.Len(t, cfg.Collectors, len(CollectorNames)+1)
 }
