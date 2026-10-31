@@ -54,6 +54,17 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
 
+      # Scanned by digest after the push, so a finding fails the job before
+      # the signing step: the image is public but not signed. Scanning before
+      # the push would mean building the image twice.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.76.1
+
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign the image by digest
