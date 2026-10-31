@@ -36,7 +36,7 @@ Every attempt counts, including a failed one that Dagster retries (see `dagster_
 
 Labels: `job_name`, `location`, `status`
 
-Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster (with the same grace period as `dagster_completed_runs_total`, so a broken code location doesn't silence "last run failed" alerts) — it does not disappear just because nothing has completed recently. Use the `status` label (`success`, `failure`, or `canceled`) to tell the outcomes apart, e.g. in a Grafana table panel.
+Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster (with the same grace period as `dagster_completed_runs_total`, so a broken code location doesn't silence "last run failed" alerts) — it does not disappear just because nothing has completed recently. It also survives a restart of the exporter: each job's latest runs are read back from Dagster once, when the exporter first sees the job (see [architecture.md](architecture.md#incremental-completed-run-fetching)). Use the `status` label (`success`, `failure`, or `canceled`) to tell the outcomes apart, e.g. in a Grafana table panel.
 
 With run retries enabled (`run_retries` in `dagster.yaml`), a failed attempt that Dagster will retry is not the job's outcome: the retry's result is. Dagster marks it with the `dagster/will_retry=true` tag, and such a run doesn't replace the last run here, so a `status="failure"` alert fires once the last attempt has failed rather than on an attempt that a retry then fixes. Dagster writes that tag just after the run's failure, so a scrape can briefly report the attempt as the last run; when the tag lands the run comes back on the next scrape and the outcome it replaced is restored. Without run retries Dagster sets no tag and every failure counts, as before.
 
@@ -72,9 +72,9 @@ Unix timestamp (`endTime`) of the most recent successful run per job, whatever r
 time() - dagster_last_success_timestamp_seconds > 26 * 3600
 ```
 
-That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). It can't fire for a job that hasn't succeeded since the exporter started, because that job has no series here; if its runs fail, the `dagster_last_run_info{status="failure"}` alert is the one that fires. Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
+That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). It can't fire for a job that has never succeeded, because that job has no series here; if its runs fail, the `dagster_last_run_info{status="failure"}` alert is the one that fires. Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
 
-Kept in memory, like `dagster_last_run_info`: after the exporter restarts it only knows successes from runs that finished since then (plus `LOOKBACK_WINDOW_MINUTES`), so a job has no series until its next success. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
+Like `dagster_last_run_info`, it is read back from Dagster when the exporter first sees a job, so a restart doesn't lose it, and a job has no series only if it has never succeeded. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
 
 ## `dagster_job_automation_running` (Gauge)
 

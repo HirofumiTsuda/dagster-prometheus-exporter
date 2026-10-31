@@ -1,0 +1,28 @@
+fragment seedRuns on RunsOrError {
+  __typename
+  ... on Runs {
+    results {
+      runId
+      jobName
+      status
+      creationTime
+      updateTime
+      endTime
+      tags {
+        key
+        value
+      }
+      repositoryOrigin {
+        repositoryName
+        repositoryLocationName
+      }
+    }
+  }
+  ... on PythonError {
+    message
+    stack
+  }
+  ... on InvalidPipelineRunsFilterError {
+    message
+  }
+}

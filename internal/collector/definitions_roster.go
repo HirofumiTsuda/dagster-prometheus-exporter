@@ -23,6 +23,18 @@ func buildKnownJobs(resp *GraphQLDefinitionsRosterResponse) map[JobKey]struct{} 
 	return known
 }
 
+// buildJobRepositories maps every job in a definitions-roster response to the
+// name of the repository it belongs to.
+func buildJobRepositories(resp *GraphQLDefinitionsRosterResponse) map[JobKey]string {
+	repositories := make(map[JobKey]string)
+	for _, repo := range resp.Data.RepositoriesOrError.Nodes {
+		for _, job := range repo.Jobs {
+			repositories[JobKey{JobName: job.Name, LocationName: repo.Location.Name}] = repo.Name
+		}
+	}
+	return repositories
+}
+
 // CollectDefinitionsRoster fetches the full jobs+schedules+sensors roster
 // in one GraphQL call (repositoriesOrError exposes all three as sibling
 // fields on Repository) and updates every piece of exporter state derived
@@ -46,11 +58,13 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	sensorStatus, sensorTickStatus := buildSensorState(resp)
 	jobTags := buildJobTags(resp, c.jobTagKeys)
 	jobAutomation := buildJobAutomation(resp)
+	jobRepositories := buildJobRepositories(resp)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	c.knownJobs = knownJobs
+	c.jobRepositories = jobRepositories
 	c.scheduleStatus = scheduleStatus
 	c.scheduleTickStatus = scheduleTickStatus
 	c.sensorStatus = sensorStatus
