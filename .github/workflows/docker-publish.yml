@@ -18,6 +18,12 @@ jobs:
       id-token: write
 
     steps:
+      # github.repository keeps the owner's capitals, which a registry rejects
+      # in an image reference. docker/metadata-action lowercases it itself, so
+      # only the steps that take the reference directly need this.
+      - name: Lowercase the image reference
+        run: echo "IMAGE_REF=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -59,7 +65,7 @@ jobs:
       # the push would mean building the image twice.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.IMAGE_REF }}@${{ steps.build.outputs.digest }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -69,6 +75,6 @@ jobs:
 
       - name: Sign the image by digest
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ${{ env.IMAGE_REF }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
