@@ -82,8 +82,14 @@ jobs:
           # dagster_exporter_scrape_errors_total only appears once a scrape
           # has failed, which a healthy e2e run never does — it can't be
           # asserted present here even in principle, so it stays excluded.
+          #
+          # The agents families only exist on Dagster+: the collector is not
+          # started without DAGSTER_CLOUD_API_TOKEN, and this job runs against
+          # open-source Dagster. Their absence is asserted below instead.
           cat > /tmp/not-yet-asserted.txt <<'NAMES'
           dagster_exporter_scrape_errors_total
+          dagster_agents
+          dagster_agent_last_heartbeat_timestamp_seconds
           NAMES
           grep -vFxf /tmp/not-yet-asserted.txt /tmp/expected-metrics.txt > /tmp/expected-metrics-asserted.txt
           echo "--- asserted this run ($(wc -l < /tmp/expected-metrics-asserted.txt) of $(wc -l < /tmp/expected-metrics.txt)) ---"
@@ -248,6 +254,15 @@ jobs:
           echo "--- job_tags: heavy_job's dagster/concurrency_key tag ---"
           echo "$METRICS" | grep -qF 'dagster_job_tags{job_name="heavy_job",location="dev-dagster-workspace",tag_dagster_concurrency_key="heavy_limit"} 1' \
             || { echo "::error::heavy_job did not report its dagster/concurrency_key tag on dagster_job_tags"; exit 1; }
+
+          # Open-source Dagster has no agents field. The collector must stay
+          # off without a token, or it would fail every scrape and sit at
+          # last_scrape_success 0.
+          echo "--- agents: no series and no collector on open-source Dagster ---"
+          echo "$METRICS" | grep -qE '^dagster_agent' \
+            && { echo "::error::an agents series was exported without a Dagster+ token"; exit 1; }
+          echo "$METRICS" | grep -qF 'collector="agents"' \
+            && { echo "::error::the agents collector ran without a Dagster+ token"; exit 1; }
 
           kill "$PORT_FORWARD_PID"
 
