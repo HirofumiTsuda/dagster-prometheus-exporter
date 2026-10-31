@@ -111,6 +111,8 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`/`canceled`) per job, since the exporter started. |
 | `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). A failed attempt that Dagster will retry doesn't count; the retry's result does. |
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
+| `dagster_last_run_end_timestamp_seconds` | Gauge | When each job's most recently completed run ended — puts a time on `dagster_last_run_info`, e.g. to alert only on recent failures. |
+| `dagster_last_success_timestamp_seconds` | Gauge | When each job last finished a successful run — the batch-job staleness signal ("hasn't succeeded in 26h"). |
 | `dagster_job_tags` | Gauge | The job tags selected by `JOB_TAG_LABELS`, as `tag_<key>` labels (always `1`), for filtering or grouping the other per-job metrics by tag. No series unless `JOB_TAG_LABELS` is set. |
 | `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |
 | `dagster_daemon_last_heartbeat_timestamp_seconds` | Gauge | When each daemon last reported a heartbeat. |
@@ -164,6 +166,11 @@ dagster_last_run_info{job_name="failing_job",location="dev-dagster-workspace",st
 
 dagster_last_run_duration_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 32.34893083572388
 
+dagster_last_run_end_timestamp_seconds{job_name="heavy_job",location="dev-dagster-workspace",status="success"} 1.793453592761589e+09
+dagster_last_run_end_timestamp_seconds{job_name="failing_job",location="dev-dagster-workspace",status="failure"} 1.793453562533287e+09
+
+dagster_last_success_timestamp_seconds{job_name="heavy_job",location="dev-dagster-workspace"} 1.793453592761589e+09
+
 dagster_job_tags{job_name="heavy_job",location="dev-dagster-workspace",tag_dagster_concurrency_key="heavy_limit"} 1
 
 dagster_run_queue_concurrency_key_backlog{concurrency_key="heavy_limit"} 3
@@ -216,6 +223,17 @@ dagster_active_run_duration_seconds{status="queued"} > 600
 
 # Slowest jobs by their most recent run duration
 topk(5, dagster_last_run_duration_seconds)
+
+# Alert: a job's last run failed within the last 24 hours. Unlike
+# dagster_last_run_info{status="failure"} alone, this stops firing for a job
+# that failed and was never run again.
+dagster_last_run_info{status="failure"} == 1
+and on (job_name, location)
+time() - dagster_last_run_end_timestamp_seconds < 24 * 3600
+
+# Alert: a job hasn't succeeded in 26 hours (failed runs, runs that never
+# start or hang, a retry that never launched)
+time() - dagster_last_success_timestamp_seconds > 26 * 3600
 
 # Which concurrency keys currently have a run-queue backlog
 dagster_run_queue_concurrency_key_backlog > 0

@@ -110,9 +110,9 @@ func TestCollectCompletedRunsTracksLastRunStatusAndDuration(t *testing.T) {
 		var dm dto.Metric
 		require.NoError(t, m.Write(&dm))
 		switch {
-		case strings.Contains(m.Desc().String(), "dagster_last_run_info"):
+		case strings.Contains(m.Desc().String(), `fqName: "dagster_last_run_info"`):
 			infoMetric = &dm
-		case strings.Contains(m.Desc().String(), "dagster_last_run_duration_seconds"):
+		case strings.Contains(m.Desc().String(), `fqName: "dagster_last_run_duration_seconds"`):
 			durationMetric = &dm
 		}
 	}
@@ -235,11 +235,15 @@ func TestPruneLastRunStatus(t *testing.T) {
 	stillHereKey := JobKey{JobName: "job_a", LocationName: "loc_a"}
 	c.lastRunStatus[goneKey] = lastRunEntry{status: "SUCCESS", endTime: 100}
 	c.lastRunStatus[stillHereKey] = lastRunEntry{status: "FAILURE", endTime: 100}
+	c.lastSuccessTime[goneKey] = 100
+	c.lastSuccessTime[stillHereKey] = 50
 
 	pruneLastRunStatus(c, map[JobKey]struct{}{stillHereKey: {}})
 
 	assert.NotContains(t, c.lastRunStatus, goneKey)
 	assert.Contains(t, c.lastRunStatus, stillHereKey)
+	assert.NotContains(t, c.lastSuccessTime, goneKey)
+	assert.Contains(t, c.lastSuccessTime, stillHereKey)
 }
 
 func TestSeedCompletedRunsCounter(t *testing.T) {
@@ -484,6 +488,74 @@ func TestLastRunUndoesAnAttemptRecordedBeforeItsWillRetryTag(t *testing.T) {
 		require.NoError(t, CollectCompletedRuns(t.Context(), c))
 		assert.NotContains(t, c.lastRunStatus, key)
 	})
+}
+
+// gaugeValues returns every series of the named metric as exported, keyed by
+// its labels ("name=value,...", in label-name order).
+func gaugeValues(t *testing.T, c *DagsterCollector, name string) map[string]float64 {
+	t.Helper()
+	reg := prometheus.NewPedanticRegistry()
+	require.NoError(t, reg.Register(c))
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	values := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			var labels []string
+			for _, l := range m.GetLabel() {
+				labels = append(labels, l.GetName()+"="+l.GetValue())
+			}
+			values[strings.Join(labels, ",")] = m.GetGauge().GetValue()
+		}
+	}
+	return values
+}
+
+func TestLastSuccessTimestampSurvivesALaterFailure(t *testing.T) {
+	base := time.Now().Unix()
+	c := collectEach(t,
+		runsResponse(attemptRun("run_a", "SUCCESS", base, base, "")),
+		runsResponse(attemptRun("run_b", "FAILURE", base+10, base+10, "")),
+		runsResponse(attemptRun("run_c", "SUCCESS", base+20, base+20, "")),
+	)
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc": float64(base)},
+		gaugeValues(t, c, "dagster_last_success_timestamp_seconds"))
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc,status=failure": float64(base + 10)},
+		gaugeValues(t, c, "dagster_last_run_end_timestamp_seconds"),
+		"the end timestamp follows the last run, whatever its status")
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc": float64(base + 20)},
+		gaugeValues(t, c, "dagster_last_success_timestamp_seconds"))
+}
+
+func TestLastSuccessTimestampDoesNotMoveBackForAnOlderRun(t *testing.T) {
+	base := time.Now().Unix()
+	c := collectEach(t,
+		runsResponse(attemptRun("run_b", "SUCCESS", base+20, base+20, "")),
+		// An older run comes back because something touched it later.
+		runsResponse(attemptRun("run_a", "SUCCESS", base, base+30, "")),
+	)
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc": float64(base + 20)},
+		gaugeValues(t, c, "dagster_last_success_timestamp_seconds"))
+}
+
+func TestLastRunTimestampsAreAbsentForARunWithoutAnEndTime(t *testing.T) {
+	c := collectEach(t, runsResponse(attemptRun("run_a", "SUCCESS", 0, time.Now().Unix(), "")))
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Empty(t, gaugeValues(t, c, "dagster_last_run_end_timestamp_seconds"),
+		"an end time of 0 would read as 1970")
+	assert.Empty(t, gaugeValues(t, c, "dagster_last_success_timestamp_seconds"))
 }
 
 func TestCollectCompletedRunsStillCountsARunWithoutAnEndTime(t *testing.T) {
