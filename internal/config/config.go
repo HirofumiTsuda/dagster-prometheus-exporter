@@ -36,10 +36,10 @@ var DagsterPlusCollectorNames = []string{
 }
 
 // ActiveCollectorNames lists the collectors that run, in CollectorNames order
-// followed by the Dagster+ ones when dagsterPlus is true.
-func ActiveCollectorNames(dagsterPlus bool) []string {
+// followed by the Dagster+ ones when isDagsterPlus is true.
+func ActiveCollectorNames(isDagsterPlus bool) []string {
 	names := append([]string(nil), CollectorNames...)
-	if dagsterPlus {
+	if isDagsterPlus {
 		names = append(names, DagsterPlusCollectorNames...)
 	}
 	return names
@@ -56,9 +56,9 @@ type Config struct {
 	Port                   int
 	DagsterGraphQLEndpoint string
 	DagsterCloudAPIToken   string
-	// DagsterPlus is true when DAGSTER_CLOUD_API_TOKEN is set: the token is how
+	// IsDagsterPlus is true when DAGSTER_CLOUD_API_TOKEN is set: the token is how
 	// the exporter knows it is talking to Dagster+.
-	DagsterPlus                  bool
+	IsDagsterPlus                bool
 	LookbackWindow               time.Duration
 	CacheTTL                     time.Duration
 	DagsterScrapingInterval      time.Duration
@@ -167,7 +167,7 @@ func Load() (*Config, error) {
 	// environment rather than a flag so the token isn't exposed in the
 	// process's argv/command line.
 	dagsterCloudAPIToken := os.Getenv("DAGSTER_CLOUD_API_TOKEN")
-	dagsterPlus := dagsterCloudAPIToken != ""
+	isDagsterPlus := dagsterCloudAPIToken != ""
 
 	dagsterScrapingInterval, err := getEnvDuration("DAGSTER_SCRAPING_INTERVAL_SECONDS", time.Second, 15*time.Second)
 	if err != nil {
@@ -179,7 +179,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	collectors, err := loadCollectorSchedules(ActiveCollectorNames(dagsterPlus), dagsterScrapingInterval, dagsterScrapingTimeout)
+	collectors, err := loadCollectorSchedules(ActiveCollectorNames(isDagsterPlus), dagsterScrapingInterval, dagsterScrapingTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func Load() (*Config, error) {
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
 		DagsterCloudAPIToken:         dagsterCloudAPIToken,
-		DagsterPlus:                  dagsterPlus,
+		IsDagsterPlus:                isDagsterPlus,
 		LookbackWindow:               lookbackWindow,
 		CacheTTL:                     cacheTTL,
 		DagsterScrapingInterval:      dagsterScrapingInterval,

@@ -52,7 +52,7 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	}
 
 	c := collector.NewDagsterCollector(ctx, cfg.DagsterGraphQLEndpoint, cfg.DagsterCloudAPIToken, cfg.LookbackWindow, cfg.CacheTTL, cfg.RunsPageSize, cfg.RunsUpdatedAfterSafetyMargin)
-	c.SeedScrapeHealth(config.ActiveCollectorNames(cfg.DagsterPlus))
+	c.SeedScrapeHealth(config.ActiveCollectorNames(cfg.IsDagsterPlus))
 	if cfg.Debug {
 		c.EnableGraphQLTimingLog()
 	}
