@@ -1,0 +1,6 @@
+query GetAgents {
+  agents {
+    status
+    lastHeartbeatTime
+  }
+}

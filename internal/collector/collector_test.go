@@ -25,12 +25,12 @@ func TestDagsterCollectorDescribeAndCollect(t *testing.T) {
 	// concurrencyKeyBacklogDesc, scheduleStatusDesc, scheduleTickStatusDesc,
 	// scheduleTickTimestampDesc, sensorStatusDesc, sensorTickStatusDesc,
 	// sensorTickTimestampDesc, daemonHealthyDesc, daemonLastHeartbeatDesc,
-	// assetStaleStatusDesc, assetLastMaterializationStatusDesc,
+	// agentsDesc, agentLastHeartbeatDesc, assetStaleStatusDesc, assetLastMaterializationStatusDesc,
 	// assetLastMaterializationTimestampDesc, opPoolActiveSlotsDesc,
 	// opPoolAssignedStepsDesc, opPoolPendingStepsDesc, opPoolLimitDesc,
 	// jobTagsDesc, plus one each from completedRunsCounter and
 	// scrapeErrorsCounter.
-	assert.Equal(t, 26, descCount)
+	assert.Equal(t, 28, descCount)
 
 	c.RecordScrapeResult("active_runs", 10*time.Millisecond, nil)
 

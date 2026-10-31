@@ -24,6 +24,7 @@ var collectFuncs = map[string]collectFunc{
 	"daemon_health":        collector.CollectDaemonHealth,
 	"asset_status":         collector.CollectAssetStatus,
 	"op_pool_concurrency":  collector.CollectOpPoolConcurrency,
+	"agents":               collector.CollectAgents,
 }
 
 // scrapeOne scrapes a single collector once and records the outcome for the
@@ -77,6 +78,19 @@ func runCollector(ctx context.Context, c *collector.DagsterCollector, name strin
 	}
 }
 
+// scheduledCollectors lists the collectors that have a schedule, in the order
+// of config.CollectorNames and then the Dagster+ ones. The Dagster+ collectors
+// have none unless the exporter was given a Dagster+ token.
+func scheduledCollectors(schedules map[string]config.CollectorSchedule) []string {
+	var names []string
+	for _, name := range config.ActiveCollectorNames(true) {
+		if _, ok := schedules[name]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // startScrape runs every collector on its own schedule until ctx is
 // cancelled.
 //
@@ -87,9 +101,10 @@ func runCollector(ctx context.Context, c *collector.DagsterCollector, name strin
 // with the rest, because serializing every cycle would add a round trip to
 // each scrape.
 func startScrape(ctx context.Context, c *collector.DagsterCollector, schedules map[string]config.CollectorSchedule) {
-	log.Printf("Starting background scraper (%d collectors)...", len(config.CollectorNames))
+	names := scheduledCollectors(schedules)
+	log.Printf("Starting background scraper (%d collectors)...", len(names))
 
-	for _, name := range config.CollectorNames {
+	for _, name := range names {
 		schedule := schedules[name]
 		log.Printf("  %s: interval %v, timeout %v", name, schedule.Interval, schedule.Timeout)
 	}
@@ -100,7 +115,7 @@ func startScrape(ctx context.Context, c *collector.DagsterCollector, schedules m
 	cancel()
 
 	var wg sync.WaitGroup
-	for _, name := range config.CollectorNames {
+	for _, name := range names {
 		schedule := schedules[name]
 		wg.Add(1)
 		go func() {

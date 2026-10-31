@@ -41,6 +41,8 @@ func fakeDagster(t *testing.T) *httptest.Server {
 				{"name":"loc_b","locationOrLoadError":{"__typename":"PythonError","message":"boom","stack":[]}}]}}}`
 		case strings.Contains(query, "daemonHealth"):
 			out = fmt.Sprintf(`{"data":{"instance":{"daemonHealth":{"allDaemonStatuses":[{"daemonType":"SCHEDULER","required":true,"healthy":true,"lastHeartbeatTime":%d,"lastHeartbeatErrors":[]}]}}}}`, now)
+		case strings.Contains(query, "agents {"):
+			out = fmt.Sprintf(`{"data":{"agents":[{"status":"RUNNING","lastHeartbeatTime":%d}]}}`, now)
 		case strings.Contains(query, "concurrencyLimits"):
 			out = `{"data":{"instance":{"concurrencyLimits":[{"concurrencyKey":"pool_a","activeSlotCount":1,"assignedStepCount":0,"pendingStepCount":2,"limit":2,"usingDefaultLimit":false}]}}}`
 		case strings.Contains(query, "assetsLatestInfo"):
@@ -65,10 +67,12 @@ func fakeDagster(t *testing.T) *httptest.Server {
 func TestMetricsPassPromlint(t *testing.T) {
 	ts := fakeDagster(t)
 	c := collector.NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
-	c.SeedScrapeHealth(config.CollectorNames)
+	c.SeedScrapeHealth(config.ActiveCollectorNames(true))
 	// dagster_job_tags has no series until JOB_TAG_LABELS selects a tag.
 	c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
 	scrapeDagster(t.Context(), c)
+	// scrapeDagster leaves out the Dagster+ collectors, which need a token.
+	scrapeOne(t.Context(), c, "agents")
 
 	reg := prometheus.NewPedanticRegistry()
 	reg.MustRegister(c, newBuildInfoGauge("test-version", "test-commit"))

@@ -244,3 +244,15 @@ func TestFirstScrapeReportsIdleJobsAsZeroActiveRuns(t *testing.T) {
 		return testutil.CollectAndCount(c, "dagster_active_runs") > 0
 	}, 2*time.Second, 10*time.Millisecond, "dagster_active_runs should have series for the idle job after the first scrape, not only from the second")
 }
+
+func TestScheduledCollectorsLeavesOutTheDagsterPlusOnesWithoutASchedule(t *testing.T) {
+	schedules := map[string]config.CollectorSchedule{}
+	for _, name := range config.CollectorNames {
+		schedules[name] = config.CollectorSchedule{Interval: time.Hour, Timeout: time.Hour}
+	}
+	assert.Equal(t, config.CollectorNames, scheduledCollectors(schedules),
+		"a collector with no schedule must not be started")
+
+	schedules["agents"] = config.CollectorSchedule{Interval: time.Hour, Timeout: time.Hour}
+	assert.Equal(t, config.ActiveCollectorNames(true), scheduledCollectors(schedules))
+}
