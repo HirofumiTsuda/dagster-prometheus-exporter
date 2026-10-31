@@ -29,6 +29,8 @@ type DagsterCollector struct {
 	sensorTickStatusDesc                  *prometheus.Desc
 	sensorTickTimestampDesc               *prometheus.Desc
 	daemonHealthyDesc                     *prometheus.Desc
+	agentsDesc                            *prometheus.Desc
+	agentLastHeartbeatDesc                *prometheus.Desc
 	daemonLastHeartbeatDesc               *prometheus.Desc
 	assetStaleStatusDesc                  *prometheus.Desc
 	assetLastMaterializationStatusDesc    *prometheus.Desc
@@ -59,6 +61,7 @@ type DagsterCollector struct {
 	scrapeResults            map[string]scrapeResult
 	codeLocationLoadError    map[string]bool
 	daemonHealth             map[string]daemonHealthEntry
+	agents                   *agentsSummary
 	assetStatus              map[string]assetStatusEntry
 	opPoolConcurrency        map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
@@ -211,6 +214,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"daemon_type"},
 			nil,
 		),
+		agentsDesc: prometheus.NewDesc(
+			"dagster_agents",
+			"Number of Dagster+ agents by status (running or not_running). Both statuses are always present once the agents have been read, so running == 0 can alert even when no agent is registered. Only exported when DAGSTER_CLOUD_API_TOKEN is set",
+			[]string{"status"},
+			nil,
+		),
+		agentLastHeartbeatDesc: prometheus.NewDesc(
+			"dagster_agent_last_heartbeat_timestamp_seconds",
+			"Unix timestamp of the most recent heartbeat of any Dagster+ agent. Absent when no agent has reported one. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			nil,
+			nil,
+		),
 		assetStaleStatusDesc: prometheus.NewDesc(
 			"dagster_asset_stale_status",
 			"Whether an asset's data is missing, stale, or fresh (value is always 1; status is carried in the status label, one of missing/stale/fresh). Absent for an asset Dagster reports no computable stale status for, and for a partitioned asset (Dagster only computes it per partition)",
@@ -296,6 +311,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.sensorTickTimestampDesc
 	ch <- c.daemonHealthyDesc
 	ch <- c.daemonLastHeartbeatDesc
+	ch <- c.agentsDesc
+	ch <- c.agentLastHeartbeatDesc
 	ch <- c.assetStaleStatusDesc
 	ch <- c.assetLastMaterializationStatusDesc
 	ch <- c.assetLastMaterializationTimestampDesc
@@ -319,6 +336,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectSensorStatus(c, ch)
 	reflectSensorTickStatus(c, ch)
 	reflectDaemonHealth(c, ch)
+	reflectAgents(c, ch)
 	reflectAssetStatus(c, ch)
 	reflectOpPoolConcurrency(c, ch)
 	reflectJobTags(c, ch)

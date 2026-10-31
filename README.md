@@ -62,7 +62,7 @@ That said, a few other versions have been spot-checked against a real instance (
 | **1.13.15** | ✅ Compatible — the pinned/CI version |
 | 1.13.19 | ✅ Compatible |
 | 1.13.26 | ✅ Compatible (all collectors scrape without GraphQL errors) — the latest at the time of writing |
-| Dagster+ | ✅ All seven collectors scrape successfully against a trial deployment. Dagster+ reports a build hash as its version, and a partitioned asset's `dagster_asset_stale_status` was not exercised there |
+| Dagster+ | ✅ All seven collectors, and the Dagster+-only `agents` collector, scrape successfully against a trial deployment. Dagster+ reports a build hash as its version, and a partitioned asset's `dagster_asset_stale_status` was not exercised there |
 
 The versions marked "all collectors scrape without GraphQL errors" were checked after `dagster_asset_stale_status` started to select `isPartitioned` (#194), against a minimal code location with partitioned and unpartitioned assets, a schedule and a sensor. That shows every query this exporter makes is accepted, and that a partitioned asset has no `dagster_asset_stale_status` series on any of them. It does not assert every metric family the way the other rows do, since it runs no jobs to trigger the rarer ones.
 
@@ -120,6 +120,8 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_op_pool_concurrency_assigned_steps` | Gauge | Steps assigned a slot against a pool but not yet running, per pool. |
 | `dagster_op_pool_concurrency_pending_steps` | Gauge | Steps waiting for a slot against a pool, not yet assigned one, per pool. |
 | `dagster_op_pool_concurrency_limit` | Gauge | Effective concurrency limit configured for a pool, per pool — divide into active slots for utilization. |
+| `dagster_agents` | Gauge | Dagster+ agents by `status` (`running` or `not_running`), the process that launches runs on Dagster+. Dagster+ only: not exported without `DAGSTER_CLOUD_API_TOKEN`. |
+| `dagster_agent_last_heartbeat_timestamp_seconds` | Gauge | When the most recent of the Dagster+ agents last sent a heartbeat. Dagster+ only. |
 | `dagster_schedule_status` | Gauge | Whether a schedule is currently on or off. |
 | `dagster_schedule_last_tick_status` | Gauge | Outcome of a schedule's most recent tick. |
 | `dagster_schedule_last_tick_timestamp_seconds` | Gauge | When a schedule last ticked, so a stalled schedule is detectable. |
@@ -132,7 +134,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 
 ### Exporter self-health
 
-These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `op_pool_concurrency` — see [docs/architecture.md](docs/architecture.md)).
+These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `op_pool_concurrency`, and `agents` on Dagster+ — see [docs/architecture.md](docs/architecture.md)).
 
 | Metric | Type | Description |
 | --- | --- | --- |
@@ -323,7 +325,7 @@ docker run -p 9101:9101 \
 
 A few Dagster+ specifics worth knowing:
 
-- **Daemon health:** `dagster_daemon_healthy` works on Dagster+ and reports every daemon type. Only its companion `dagster_daemon_last_heartbeat_timestamp_seconds` is absent, because Dagster+ returns a null `lastHeartbeatTime` for agent-managed daemons and the exporter omits the series rather than emitting a zero.
+- **Daemon health:** `dagster_daemon_healthy` works on Dagster+ and reports every daemon type. Only its companion `dagster_daemon_last_heartbeat_timestamp_seconds` is absent, because Dagster+ returns a null `lastHeartbeatTime` for agent-managed daemons and the exporter omits the series rather than emitting a zero. Use `dagster_agents` and `dagster_agent_last_heartbeat_timestamp_seconds` to watch the agent, which is what can be down on Dagster+.
 - **`/readyz` version:** on Dagster+ the `version` field in the `/readyz` response body is an internal build hash (e.g. `80a3a302`), not a Dagster release number like `1.13.15`. The readiness check itself is unaffected — this only matters if you were reading that value expecting a semver.
 - **Helm:** put the token in a Kubernetes `Secret` and set `dagsterCloudApiToken.existingSecret` to its name; see the chart README's [Dagster+ section](charts/dagster-prometheus-exporter/README.md#dagster). Don't set `env.DAGSTER_CLOUD_API_TOKEN`: `env.*` is rendered into a `ConfigMap`, which would store the token in plain text. This needs chart 0.1.9 or newer; with 0.1.8 or older, `env` is the only way in.
 

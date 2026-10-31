@@ -114,6 +114,32 @@ time() - dagster_daemon_last_heartbeat_timestamp_seconds{daemon_type="SCHEDULER"
 
 Exporting the raw timestamp is what makes that choice yours: an exported age would be computed once per scrape and then served unchanged, so it would understate the outage by up to a full scrape interval.
 
+## `dagster_agents` (Gauge)
+
+Labels: `status` (`running` or `not_running`)
+
+**Dagster+ only.** The number of Dagster+ agents in each state. The agent is the process that launches runs: when it stops, the webserver stays up, schedules, sensors and manual launches stop, and runs sit in `QUEUED` or `STARTING`. `dagster_daemon_healthy` cannot see this, because Dagster+ runs its own daemons.
+
+Both statuses are always exported once the agents have been read, so `running` is `0` when no agent is registered. That is what lets this alert fire in that case:
+
+```promql
+dagster_agents{status="running"} == 0
+```
+
+It counts agents instead of reporting one series per agent, on purpose. Dagster+ keeps a stopped agent in its list, so a per-agent series would stay at `0` for every agent that ever ran, and on Dagster+ Serverless an agent's id changes on every restart. A status other than `RUNNING` counts as `not_running`.
+
+The collector (`agents`) only runs when `DAGSTER_CLOUD_API_TOKEN` is set. Open-source Dagster has no `agents` field, so against it the query would fail every scrape.
+
+## `dagster_agent_last_heartbeat_timestamp_seconds` (Gauge)
+
+**Dagster+ only.** Unix timestamp of the most recent heartbeat of any agent, exported as a timestamp so staleness is computed at query time. Agents send one about every 30 seconds, so a threshold of a couple of minutes is enough:
+
+```promql
+time() - dagster_agent_last_heartbeat_timestamp_seconds > 120
+```
+
+It is the newest of all agents, so a stopped agent that is still listed cannot make a running one look stale. It is absent when no agent has reported a heartbeat.
+
 ## `dagster_run_queue_concurrency_key_backlog` (Gauge)
 
 Labels: `concurrency_key`
@@ -240,7 +266,7 @@ Absent for a pool Dagster reports no limit for at all — the schema makes `limi
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven collectors described in [docs/architecture.md](architecture.md)). Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

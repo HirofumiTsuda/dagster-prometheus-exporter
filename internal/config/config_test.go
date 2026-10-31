@@ -38,7 +38,7 @@ var configEnvVars = []string{
 }
 
 func init() {
-	for _, name := range CollectorNames {
+	for _, name := range ActiveCollectorNames(true) {
 		prefix := strings.ToUpper(name)
 		configEnvVars = append(configEnvVars,
 			prefix+"_SCRAPING_INTERVAL_SECONDS",
@@ -226,6 +226,28 @@ func TestLoadCollectorsInheritTheGlobalSchedule(t *testing.T) {
 	for _, name := range CollectorNames {
 		assert.Equal(t, CollectorSchedule{Interval: 30 * time.Second, Timeout: 20 * time.Second}, cfg.Collectors[name], name)
 	}
+}
+
+func TestLoadRunsTheAgentsCollectorOnlyWithADagsterPlusToken(t *testing.T) {
+	setEnv(t, nil)
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.IsDagsterPlus)
+	assert.NotContains(t, cfg.Collectors, "agents",
+		"open-source Dagster has no agents field, so the collector would fail every scrape")
+
+	setEnv(t, map[string]string{
+		"DAGSTER_CLOUD_API_TOKEN":           "user:secret-token",
+		"AGENTS_SCRAPING_INTERVAL_SECONDS":  "60",
+		"DAGSTER_SCRAPING_INTERVAL_SECONDS": "15",
+		"DAGSTER_SCRAPING_TIMEOUT_SECONDS":  "10",
+		"AGENTS_SCRAPING_TIMEOUT_SECONDS":   "20",
+	})
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.IsDagsterPlus)
+	assert.Equal(t, CollectorSchedule{Interval: 60 * time.Second, Timeout: 20 * time.Second}, cfg.Collectors["agents"])
+	assert.Len(t, cfg.Collectors, len(CollectorNames)+1)
 }
 
 func TestLoadCollectorOverridesApplyToThatCollectorOnly(t *testing.T) {

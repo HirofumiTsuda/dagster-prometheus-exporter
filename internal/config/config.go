@@ -27,6 +27,24 @@ var CollectorNames = []string{
 	"op_pool_concurrency",
 }
 
+// DagsterPlusCollectorNames are the collectors that only make sense against
+// Dagster+, because they read a field open-source Dagster does not have. They
+// run only when DAGSTER_CLOUD_API_TOKEN is set: the token is how the exporter
+// knows it is talking to Dagster+. Otherwise they would fail every scrape.
+var DagsterPlusCollectorNames = []string{
+	"agents",
+}
+
+// ActiveCollectorNames lists the collectors that run, in CollectorNames order
+// followed by the Dagster+ ones when isDagsterPlus is true.
+func ActiveCollectorNames(isDagsterPlus bool) []string {
+	names := append([]string(nil), CollectorNames...)
+	if isDagsterPlus {
+		names = append(names, DagsterPlusCollectorNames...)
+	}
+	return names
+}
+
 // CollectorSchedule is how often one collector scrapes and how long a single
 // scrape of it may take.
 type CollectorSchedule struct {
@@ -35,9 +53,12 @@ type CollectorSchedule struct {
 }
 
 type Config struct {
-	Port                         int
-	DagsterGraphQLEndpoint       string
-	DagsterCloudAPIToken         string
+	Port                   int
+	DagsterGraphQLEndpoint string
+	DagsterCloudAPIToken   string
+	// IsDagsterPlus is true when DAGSTER_CLOUD_API_TOKEN is set: the token is how
+	// the exporter knows it is talking to Dagster+.
+	IsDagsterPlus                bool
 	LookbackWindow               time.Duration
 	CacheTTL                     time.Duration
 	DagsterScrapingInterval      time.Duration
@@ -45,7 +66,7 @@ type Config struct {
 	RunsPageSize                 int
 	RunsUpdatedAfterSafetyMargin time.Duration
 	// Collectors holds the effective schedule of every collector in
-	// CollectorNames: its own override where set, else the global
+	// ActiveCollectorNames: its own override where set, else the global
 	// DagsterScrapingInterval / DagsterScrapingTimeout.
 	Collectors map[string]CollectorSchedule
 	// Debug is set by LOG_LEVEL=debug and turns on per-call GraphQL timing
@@ -146,6 +167,7 @@ func Load() (*Config, error) {
 	// environment rather than a flag so the token isn't exposed in the
 	// process's argv/command line.
 	dagsterCloudAPIToken := os.Getenv("DAGSTER_CLOUD_API_TOKEN")
+	isDagsterPlus := dagsterCloudAPIToken != ""
 
 	dagsterScrapingInterval, err := getEnvDuration("DAGSTER_SCRAPING_INTERVAL_SECONDS", time.Second, 15*time.Second)
 	if err != nil {
@@ -157,7 +179,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	collectors, err := loadCollectorSchedules(dagsterScrapingInterval, dagsterScrapingTimeout)
+	collectors, err := loadCollectorSchedules(ActiveCollectorNames(isDagsterPlus), dagsterScrapingInterval, dagsterScrapingTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +245,7 @@ func Load() (*Config, error) {
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
 		DagsterCloudAPIToken:         dagsterCloudAPIToken,
+		IsDagsterPlus:                isDagsterPlus,
 		LookbackWindow:               lookbackWindow,
 		CacheTTL:                     cacheTTL,
 		DagsterScrapingInterval:      dagsterScrapingInterval,
@@ -309,7 +332,7 @@ func loadGraphQLRootCAs() (*x509.CertPool, error) {
 // interval. That isn't invalid -- waiting longer on a temporarily slow
 // Dagster is a reasonable thing to want -- so this warns rather than errors,
 // just so it doesn't happen unnoticed.
-func loadCollectorSchedules(interval, timeout time.Duration) (map[string]CollectorSchedule, error) {
+func loadCollectorSchedules(names []string, interval, timeout time.Duration) (map[string]CollectorSchedule, error) {
 	// Collectors that inherit both global values share the global warning
 	// below instead of each repeating it.
 	if timeout > interval {
@@ -317,8 +340,8 @@ func loadCollectorSchedules(interval, timeout time.Duration) (map[string]Collect
 			timeout, interval)
 	}
 
-	schedules := make(map[string]CollectorSchedule, len(CollectorNames))
-	for _, name := range CollectorNames {
+	schedules := make(map[string]CollectorSchedule, len(names))
+	for _, name := range names {
 		prefix := strings.ToUpper(name)
 
 		collectorInterval, err := getEnvDuration(prefix+"_SCRAPING_INTERVAL_SECONDS", time.Second, interval)

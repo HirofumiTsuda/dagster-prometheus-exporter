@@ -575,6 +575,39 @@ func getDaemonHealth(ctx context.Context, request *GraphQLRequest, client dagste
 	return &resp, nil
 }
 
+// GraphQLAgentsResponse is the shape of the top-level agents field, which only
+// Dagster+ has. Against open-source Dagster the query fails with a GraphQL
+// error, so it must not be sent without a Dagster+ token.
+//
+// lastHeartbeatTime is nullable, hence the pointer.
+type GraphQLAgentsResponse struct {
+	Data struct {
+		Agents []struct {
+			Status            string   `json:"status"`
+			LastHeartbeatTime *float64 `json:"lastHeartbeatTime"`
+		} `json:"agents"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_agents.graphql
+var agentsQuery string
+
+func getAgentsRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: agentsQuery,
+	}
+}
+
+func getAgents(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLAgentsResponse, error) {
+	var resp GraphQLAgentsResponse
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 // AssetKeyPath is a Dagster asset key: an ordered path (e.g. a dbt project
 // and model name), not a single string. assetKeyLabel joins it into the
 // Prometheus label value.

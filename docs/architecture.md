@@ -15,7 +15,7 @@ Because scraping (writing state) and metrics rendering (reading state) are decou
 
 ## Why seven collectors, and why they're split the way they are
 
-The seven collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, op pool concurrency) run concurrently on every scrape — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
+The seven collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, op pool concurrency) run concurrently on every scrape, joined by an eighth, `agents`, when `DAGSTER_CLOUD_API_TOKEN` is set (only Dagster+ has the field it reads) — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
 
 The code-location load status collector is intentionally independent of the definitions-roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` in the [metrics reference](metrics.md).
 
