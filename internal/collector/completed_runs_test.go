@@ -391,6 +391,101 @@ func TestCollectCompletedRunsDoesNotRecountARunTaggedLongAfterItFinished(t *test
 		"a run that finished before the window and was only tagged later is not a new completion")
 }
 
+// attemptRun is a run of job_a in loc with the given status. willRetry is the
+// value of its dagster/will_retry tag, or "" for no tag.
+func attemptRun(id, status string, end, update int64, willRetry string) string {
+	tags := ""
+	if willRetry != "" {
+		tags = fmt.Sprintf(`{"key":"dagster/will_retry","value":%q}`, willRetry)
+	}
+	return fmt.Sprintf(`{"runId":%q,"jobName":"job_a","status":%q,"creationTime":%d,"endTime":%d,"updateTime":%d,"tags":[%s],"repositoryOrigin":{"repositoryName":"repo","repositoryLocationName":"loc"}}`,
+		id, status, end-10, end, update, tags)
+}
+
+// collectEach serves one response per CollectCompletedRuns call.
+func collectEach(t *testing.T, responses ...string) *DagsterCollector {
+	t.Helper()
+	call := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(responses[call]))
+		assert.NoError(t, err)
+		call++
+	}))
+	t.Cleanup(ts.Close)
+	return NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+}
+
+func TestLastRunSkipsFailedAttemptsThatWillBeRetried(t *testing.T) {
+	base := time.Now().Unix()
+	key := JobKey{JobName: "job_a", LocationName: "loc"}
+	c := collectEach(t,
+		runsResponse(attemptRun("run_a", "SUCCESS", base, base, "")),
+		runsResponse(attemptRun("run_b", "FAILURE", base+10, base+10, "true")),
+		runsResponse(attemptRun("run_c", "SUCCESS", base+20, base+20, "")),
+	)
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, "run_a", c.lastRunStatus[key].runID,
+		"a failed attempt Dagster retries is not the job's outcome")
+	assert.Equal(t, float64(1), testutil.ToFloat64(c.completedRunsCounter.WithLabelValues("job_a", "loc", "failure")),
+		"the attempt still counts as a completed run")
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	assert.Equal(t, "run_c", c.lastRunStatus[key].runID)
+	assert.Equal(t, "SUCCESS", c.lastRunStatus[key].status)
+}
+
+func TestLastRunRecordsTheLastAttemptsFailure(t *testing.T) {
+	base := time.Now().Unix()
+	c := collectEach(t,
+		runsResponse(attemptRun("run_a", "FAILURE", base, base, "true")),
+		runsResponse(attemptRun("run_b", "FAILURE", base+10, base+10, "false")),
+	)
+
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+	require.NoError(t, CollectCompletedRuns(t.Context(), c))
+
+	entry := c.lastRunStatus[JobKey{JobName: "job_a", LocationName: "loc"}]
+	assert.Equal(t, "run_b", entry.runID)
+	assert.Equal(t, "FAILURE", entry.status)
+}
+
+// Dagster writes dagster/will_retry after the FAILURE status, so a scrape can
+// record the attempt before its tag exists. Once the tag lands, the run comes
+// back (its updateTime moves) and must be undone.
+func TestLastRunUndoesAnAttemptRecordedBeforeItsWillRetryTag(t *testing.T) {
+	base := time.Now().Unix()
+	key := JobKey{JobName: "job_a", LocationName: "loc"}
+
+	t.Run("the outcome it replaced comes back", func(t *testing.T) {
+		c := collectEach(t,
+			runsResponse(attemptRun("run_a", "SUCCESS", base, base, "")),
+			runsResponse(attemptRun("run_b", "FAILURE", base+10, base+10, "")),
+			runsResponse(attemptRun("run_b", "FAILURE", base+10, base+11, "true")),
+		)
+		require.NoError(t, CollectCompletedRuns(t.Context(), c))
+		require.NoError(t, CollectCompletedRuns(t.Context(), c))
+		assert.Equal(t, "FAILURE", c.lastRunStatus[key].status)
+
+		require.NoError(t, CollectCompletedRuns(t.Context(), c))
+		assert.Equal(t, "run_a", c.lastRunStatus[key].runID)
+		assert.Equal(t, "SUCCESS", c.lastRunStatus[key].status)
+		assert.Equal(t, float64(base), c.lastRunStatus[key].endTime)
+	})
+
+	t.Run("a job with no earlier outcome has none again", func(t *testing.T) {
+		c := collectEach(t,
+			runsResponse(attemptRun("run_b", "FAILURE", base+10, base+10, "")),
+			runsResponse(attemptRun("run_b", "FAILURE", base+10, base+11, "true")),
+		)
+		require.NoError(t, CollectCompletedRuns(t.Context(), c))
+		require.NoError(t, CollectCompletedRuns(t.Context(), c))
+		assert.NotContains(t, c.lastRunStatus, key)
+	})
+}
+
 func TestCollectCompletedRunsStillCountsARunWithoutAnEndTime(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

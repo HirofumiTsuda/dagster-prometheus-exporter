@@ -108,7 +108,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_active_runs` | Gauge | Currently active runs (`queued`/`starting`/`started`) per job. |
 | `dagster_active_run_duration_seconds` | Gauge | How long the oldest active run in a job/status has been there — a signal for stuck runs and queue backlogs. |
 | `dagster_completed_runs_total` | Counter | Completed runs (`success`/`failure`/`canceled`) per job, since the exporter started. |
-| `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). |
+| `dagster_last_run_info` | Gauge | Status of each job's most recently completed run (always `1`; status is in the `status` label). A failed attempt that Dagster will retry doesn't count; the retry's result does. |
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
 | `dagster_job_tags` | Gauge | The job tags selected by `JOB_TAG_LABELS`, as `tag_<key>` labels (always `1`), for filtering or grouping the other per-job metrics by tag. No series unless `JOB_TAG_LABELS` is set. |
 | `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |

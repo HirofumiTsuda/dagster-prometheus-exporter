@@ -41,13 +41,7 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 
 			location := result.location()
 			key := JobKey{JobName: result.JobName, LocationName: location}
-			if current, ok := c.lastRunStatus[key]; !ok || result.EndTime > current.endTime {
-				c.lastRunStatus[key] = lastRunEntry{
-					status:   result.Status,
-					endTime:  result.EndTime,
-					duration: result.EndTime - result.CreationTime,
-				}
-			}
+			updateLastRun(c, key, result)
 
 			if item := c.processedRuns.Get(result.RunId); item != nil {
 				continue
@@ -89,9 +83,69 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 // keep reporting it even after the run falls outside the completed-runs
 // lookback window.
 type lastRunEntry struct {
+	runID    string
 	status   string
 	endTime  float64
 	duration float64
+	// previous is the entry this one replaced, kept so updateLastRun can put
+	// it back if this run turns out to be a failed attempt Dagster retries.
+	previous *lastRunEntry
+}
+
+// willRetryTag is the tag Dagster puts on a failed run when run retries are
+// enabled: "true" if it will launch another attempt, "false" on the last one.
+// It is written right after the run's FAILURE status, as a separate update, so
+// a scrape can see the failed run before its tag. Writing the tag bumps the
+// run's updateTime, so the run comes back on a later scrape with it set.
+const willRetryTag = "dagster/will_retry"
+
+func (r Run) willRetry() bool {
+	for _, tag := range r.Tags {
+		if tag.Key == willRetryTag {
+			return tag.Value == "true"
+		}
+	}
+	return false
+}
+
+// updateLastRun records a completed run as its job's latest outcome, unless it
+// is a failed attempt Dagster will retry. The retry's result is the outcome, so
+// dagster_last_run_info doesn't flip to failure while a retry fixes it. If the
+// attempt was already recorded, because a scrape saw it fail before its
+// will_retry tag was written, the outcome it replaced is put back.
+//
+// One level of previous is enough: Dagster only launches the retry after the
+// tag is written, so an attempt is undone before a later run of the job can be
+// recorded on top of it.
+//
+// Callers must hold c.mutex.
+func updateLastRun(c *DagsterCollector, key JobKey, run Run) {
+	current, ok := c.lastRunStatus[key]
+	if run.willRetry() {
+		if ok && current.runID == run.RunId {
+			if current.previous != nil {
+				c.lastRunStatus[key] = *current.previous
+			} else {
+				delete(c.lastRunStatus, key)
+			}
+		}
+		return
+	}
+	if ok && run.EndTime <= current.endTime {
+		return
+	}
+	entry := lastRunEntry{
+		runID:    run.RunId,
+		status:   run.Status,
+		endTime:  run.EndTime,
+		duration: run.EndTime - run.CreationTime,
+	}
+	if ok {
+		previous := current
+		previous.previous = nil
+		entry.previous = &previous
+	}
+	c.lastRunStatus[key] = entry
 }
 
 // reflectLastRun emits both dagster_last_run_info and

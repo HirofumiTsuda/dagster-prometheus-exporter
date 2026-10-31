@@ -30,17 +30,21 @@ Labels: `job_name`, `location`, `status`
 
 Total number of completed runs (`success`, `failure`, `canceled`) per job, since the exporter started. Jobs that have never run are seeded at `0`. Series for jobs that no longer exist in Dagster are deleted automatically — not on the first scrape a job is missing, but on the third consecutive one (roughly 2 × `DAGSTER_SCRAPING_INTERVAL_SECONDS` later), and never while its code location has `dagster_code_location_load_error` set to `1`. A code location that fails to load drops out of Dagster's job list, and deleting its counters then would reset them to `0` on recovery, which Prometheus reads as a counter reset. See [architecture.md](architecture.md#the-definitions-roster-collector).
 
+Every attempt counts, including a failed one that Dagster retries (see `dagster_last_run_info` below), so `status="failure"` is the right input for a failure rate but not for "the job failed".
+
 ## `dagster_last_run_info` (Gauge)
 
 Labels: `job_name`, `location`, `status`
 
 Always `1`; an "info" metric (same pattern as `kube_pod_info`) reporting the status of the most recently completed run per job. Kept until a newer completion supersedes it or the job is removed from Dagster (with the same grace period as `dagster_completed_runs_total`, so a broken code location doesn't silence "last run failed" alerts) — it does not disappear just because nothing has completed recently. Use the `status` label (`success`, `failure`, or `canceled`) to tell the outcomes apart, e.g. in a Grafana table panel.
 
+With run retries enabled (`run_retries` in `dagster.yaml`), a failed attempt that Dagster will retry is not the job's outcome: the retry's result is. Dagster marks it with the `dagster/will_retry=true` tag, and such a run doesn't replace the last run here, so a `status="failure"` alert fires once the last attempt has failed rather than on an attempt that a retry then fixes. Dagster writes that tag just after the run's failure, so a scrape can briefly report the attempt as the last run; when the tag lands the run comes back on the next scrape and the outcome it replaced is restored. Without run retries Dagster sets no tag and every failure counts, as before.
+
 ## `dagster_last_run_duration_seconds` (Gauge)
 
 Labels: `job_name`, `location`, `status`
 
-Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`.
+Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`. For a run that Dagster retried, that is the duration of the attempt that settled the outcome, not of all attempts together.
 
 ## `dagster_job_tags` (Gauge)
 
