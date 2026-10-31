@@ -42,6 +42,9 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 			location := result.location()
 			key := JobKey{JobName: result.JobName, LocationName: location}
 			updateLastRun(c, key, result)
+			if result.Status == "SUCCESS" && result.EndTime > c.lastSuccessTime[key] {
+				c.lastSuccessTime[key] = result.EndTime
+			}
 
 			if item := c.processedRuns.Get(result.RunId); item != nil {
 				continue
@@ -148,10 +151,11 @@ func updateLastRun(c *DagsterCollector, key JobKey, run Run) {
 	c.lastRunStatus[key] = entry
 }
 
-// reflectLastRun emits both dagster_last_run_info and
-// dagster_last_run_duration_seconds from a single locked pass over
-// c.lastRunStatus — they're two views of the same underlying entry, so
-// iterating it twice (with two separate locks) would be pure overhead.
+// reflectLastRun emits dagster_last_run_info, dagster_last_run_duration_seconds
+// and dagster_last_run_end_timestamp_seconds from a single locked pass over
+// c.lastRunStatus — they're views of the same underlying entry, so iterating
+// it once per metric (with separate locks) would be pure overhead — and
+// dagster_last_success_timestamp_seconds from c.lastSuccessTime.
 func reflectLastRun(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -173,18 +177,44 @@ func reflectLastRun(c *DagsterCollector, ch chan<- prometheus.Metric) {
 			key.LocationName,
 			status,
 		)
+		// Not exported as 0 for a run without an end time: 0 reads as 1970,
+		// which every time() - metric staleness alert would fire on.
+		if entry.endTime > 0 {
+			ch <- prometheus.MustNewConstMetric(
+				c.lastRunEndTimestampDesc,
+				prometheus.GaugeValue,
+				entry.endTime,
+				key.JobName,
+				key.LocationName,
+				status,
+			)
+		}
+	}
+	for key, endTime := range c.lastSuccessTime {
+		ch <- prometheus.MustNewConstMetric(
+			c.lastSuccessTimestampDesc,
+			prometheus.GaugeValue,
+			endTime,
+			key.JobName,
+			key.LocationName,
+		)
 	}
 }
 
-// pruneLastRunStatus deletes cached last-run status for jobs that no longer
-// exist, so dagster_last_run_info doesn't keep reporting stale entries
-// forever for removed jobs. retained is the roster plus the jobs whose
-// absence from it isn't conclusive yet (see retainedJobs).
+// pruneLastRunStatus deletes cached last-run status and last success time for
+// jobs that no longer exist, so dagster_last_run_info doesn't keep reporting
+// stale entries forever for removed jobs. retained is the roster plus the jobs
+// whose absence from it isn't conclusive yet (see retainedJobs).
 // Callers must hold c.mutex.
 func pruneLastRunStatus(c *DagsterCollector, retained map[JobKey]struct{}) {
 	for key := range c.lastRunStatus {
 		if _, ok := retained[key]; !ok {
 			delete(c.lastRunStatus, key)
+		}
+	}
+	for key := range c.lastSuccessTime {
+		if _, ok := retained[key]; !ok {
+			delete(c.lastSuccessTime, key)
 		}
 	}
 }

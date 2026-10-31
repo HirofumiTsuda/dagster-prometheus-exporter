@@ -20,6 +20,8 @@ type DagsterCollector struct {
 	scrapeErrorsCounter                   *prometheus.CounterVec
 	codeLocationLoadErrorDesc             *prometheus.Desc
 	lastRunDurationDesc                   *prometheus.Desc
+	lastRunEndTimestampDesc               *prometheus.Desc
+	lastSuccessTimestampDesc              *prometheus.Desc
 	activeRunDurationDesc                 *prometheus.Desc
 	concurrencyKeyBacklogDesc             *prometheus.Desc
 	scheduleStatusDesc                    *prometheus.Desc
@@ -55,6 +57,7 @@ type DagsterCollector struct {
 	knownJobs                map[JobKey]struct{}
 	jobAbsenceStreak         map[JobKey]int
 	lastRunStatus            map[JobKey]lastRunEntry
+	lastSuccessTime          map[JobKey]float64
 	trackedCompletedRunKeys  map[JobKey]struct{}
 	lastSeenUpdateTime       float64
 	runsPageSize             int
@@ -152,6 +155,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			"dagster_last_run_duration_seconds",
 			"Duration of the most recently completed run for a job (endTime - creationTime)",
 			[]string{"job_name", "location", "status"},
+			nil,
+		),
+		lastRunEndTimestampDesc: prometheus.NewDesc(
+			"dagster_last_run_end_timestamp_seconds",
+			"Unix timestamp (endTime) of the most recently completed run for a job, the same run as dagster_last_run_info. Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"job_name", "location", "status"},
+			nil,
+		),
+		lastSuccessTimestampDesc: prometheus.NewDesc(
+			"dagster_last_success_timestamp_seconds",
+			"Unix timestamp (endTime) of a job's most recent successful run, regardless of what ran after it. Absent until the exporter has seen one (see docs/metrics.md). Exported as a timestamp rather than an age so staleness is computed at query time (time() - metric), not frozen at scrape time",
+			[]string{"job_name", "location"},
 			nil,
 		),
 		activeRunDurationDesc: prometheus.NewDesc(
@@ -273,6 +288,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		lookbackWindow:               lookbackWindow,
 		jobAbsenceStreak:             make(map[JobKey]int),
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
+		lastSuccessTime:              make(map[JobKey]float64),
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
@@ -301,6 +317,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.lastScrapeSuccessDesc
 	ch <- c.codeLocationLoadErrorDesc
 	ch <- c.lastRunDurationDesc
+	ch <- c.lastRunEndTimestampDesc
+	ch <- c.lastSuccessTimestampDesc
 	ch <- c.activeRunDurationDesc
 	ch <- c.concurrencyKeyBacklogDesc
 	ch <- c.scheduleStatusDesc
