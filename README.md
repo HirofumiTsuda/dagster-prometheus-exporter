@@ -8,6 +8,7 @@
 [![Grafana dashboard](https://img.shields.io/badge/Grafana%20dashboard-25815-F46800?logo=grafana&logoColor=white)](https://grafana.com/grafana/dashboards/25815-dagster-run-monitoring/)
 [![codecov](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter/graph/badge.svg)](https://codecov.io/gh/HirofumiTsuda/dagster-prometheus-exporter)
 [![CodeQL](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/codeql.yml)
+[![Security Scan](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/security-scan.yml/badge.svg)](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/actions/workflows/security-scan.yml)
 [![Go version](https://img.shields.io/github/go-mod/go-version/HirofumiTsuda/dagster-prometheus-exporter)](go.mod)
 [![Go Reference](https://pkg.go.dev/badge/github.com/HirofumiTsuda/dagster-prometheus-exporter.svg)](https://pkg.go.dev/github.com/HirofumiTsuda/dagster-prometheus-exporter)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
