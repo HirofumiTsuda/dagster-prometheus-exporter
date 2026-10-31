@@ -113,6 +113,7 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_last_run_duration_seconds` | Gauge | Duration of each job's most recently completed run. |
 | `dagster_last_run_end_timestamp_seconds` | Gauge | When each job's most recently completed run ended — puts a time on `dagster_last_run_info`, e.g. to alert only on recent failures. |
 | `dagster_last_success_timestamp_seconds` | Gauge | When each job last finished a successful run — the batch-job staleness signal ("hasn't succeeded in 26h"). |
+| `dagster_job_automation_running` | Gauge | Whether a schedule or sensor that is turned on launches each job (`1`/`0`) — scope alerts to jobs that something still runs. |
 | `dagster_job_tags` | Gauge | The job tags selected by `JOB_TAG_LABELS`, as `tag_<key>` labels (always `1`), for filtering or grouping the other per-job metrics by tag. No series unless `JOB_TAG_LABELS` is set. |
 | `dagster_daemon_healthy` | Gauge | Whether each Dagster daemon is alive — the only metric that sees a dead scheduler. |
 | `dagster_daemon_last_heartbeat_timestamp_seconds` | Gauge | When each daemon last reported a heartbeat. |
@@ -234,6 +235,11 @@ time() - dagster_last_run_end_timestamp_seconds < 24 * 3600
 # Alert: a job hasn't succeeded in 26 hours (failed runs, runs that never
 # start or hang, a retry that never launched)
 time() - dagster_last_success_timestamp_seconds > 26 * 3600
+
+# The same, only for jobs that a schedule or sensor still launches: a job
+# whose schedule was switched off drops out instead of firing forever
+(time() - dagster_last_success_timestamp_seconds > 26 * 3600)
+and on (job_name, location) dagster_job_automation_running == 1
 
 # Which concurrency keys currently have a run-queue backlog
 dagster_run_queue_concurrency_key_backlog > 0

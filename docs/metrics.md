@@ -76,6 +76,21 @@ That one rule covers failures, runs that never start or hang, and a failed attem
 
 Kept in memory, like `dagster_last_run_info`: after the exporter restarts it only knows successes from runs that finished since then (plus `LOOKBACK_WINDOW_MINUTES`), so a job has no series until its next success. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
 
+## `dagster_job_automation_running` (Gauge)
+
+Labels: `job_name`, `location`
+
+`1` if a schedule or sensor that is turned on launches the job, `0` if none does, one series per job. A job that is only launched some other way (by hand, through the API, by another job) reads `0`.
+
+It tells a job nobody runs any more apart from one that is broken. Scoping an alert to automated jobs makes it stop when someone deliberately switches the schedule or sensor off, instead of firing forever, while a job that is still scheduled keeps alerting until it is fixed:
+
+```promql
+(time() - dagster_last_success_timestamp_seconds > 26 * 3600)
+and on (job_name, location) dagster_job_automation_running == 1
+```
+
+The links come from each schedule's job and each sensor's targets in the definitions roster, so a sensor's targets are only the jobs it declares. A sensor that launches runs of jobs it doesn't declare as targets doesn't mark them. Like `dagster_job_tags`, a job that drops out of the roster keeps its last value while its code location is failing to load, so the broken deploy doesn't drop it out of alerts scoped on this metric.
+
 ## `dagster_job_tags` (Gauge)
 
 Labels: `job_name`, `location`, plus one `tag_<key>` per key in `JOB_TAG_LABELS`

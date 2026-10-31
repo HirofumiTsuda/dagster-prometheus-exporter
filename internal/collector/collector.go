@@ -42,6 +42,7 @@ type DagsterCollector struct {
 	opPoolPendingStepsDesc                *prometheus.Desc
 	opPoolLimitDesc                       *prometheus.Desc
 	jobTagsDesc                           *prometheus.Desc
+	jobAutomationDesc                     *prometheus.Desc
 
 	mutex                 sync.Mutex
 	activeRunAggregates   map[ActiveRunKey]activeRunAggregate
@@ -69,8 +70,9 @@ type DagsterCollector struct {
 	opPoolConcurrency        map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
 	// jobTags holds each job's values for those keys, in the same order.
-	jobTagKeys []string
-	jobTags    map[JobKey][]string
+	jobTagKeys    []string
+	jobTags       map[JobKey][]string
+	jobAutomation map[JobKey]bool
 	// runsUpdatedAfterSafetyMargin is subtracted from the last-seen
 	// updateTime watermark before it's used as the next scrape's
 	// updatedAfter. A run's updateTime can be set slightly before its write
@@ -283,7 +285,13 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"pool", "using_default_limit"},
 			nil,
 		),
-		jobTagsDesc:                  newJobTagsDesc(nil),
+		jobTagsDesc: newJobTagsDesc(nil),
+		jobAutomationDesc: prometheus.NewDesc(
+			"dagster_job_automation_running",
+			"Whether a schedule or sensor that is turned on launches the job (1) or not (0). A job that is only launched some other way, such as by hand or through the API, reads 0",
+			[]string{"job_name", "location"},
+			nil,
+		),
 		processedRuns:                cache,
 		lookbackWindow:               lookbackWindow,
 		jobAbsenceStreak:             make(map[JobKey]int),
@@ -339,6 +347,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.opPoolPendingStepsDesc
 	ch <- c.opPoolLimitDesc
 	ch <- c.jobTagsDesc
+	ch <- c.jobAutomationDesc
 	c.completedRunsCounter.Describe(ch)
 	c.scrapeErrorsCounter.Describe(ch)
 }
@@ -358,6 +367,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectAssetStatus(c, ch)
 	reflectOpPoolConcurrency(c, ch)
 	reflectJobTags(c, ch)
+	reflectJobAutomation(c, ch)
 	c.completedRunsCounter.Collect(ch)
 	c.scrapeErrorsCounter.Collect(ch)
 }

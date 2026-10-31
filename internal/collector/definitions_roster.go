@@ -45,6 +45,7 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 	scheduleStatus, scheduleTickStatus := buildScheduleState(resp)
 	sensorStatus, sensorTickStatus := buildSensorState(resp)
 	jobTags := buildJobTags(resp, c.jobTagKeys)
+	jobAutomation := buildJobAutomation(resp)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -57,22 +58,31 @@ func CollectDefinitionsRoster(ctx context.Context, c *DagsterCollector) error {
 
 	retained := retainedJobs(c, knownJobs)
 
-	// A job missing from this roster keeps its tags while its other series
-	// are retained, so an alert joined on dagster_job_tags isn't silenced by
-	// the broken code location retainedJobs guards against.
-	for key, values := range c.jobTags {
-		_, inRoster := jobTags[key]
-		if _, ok := retained[key]; ok && !inRoster {
-			jobTags[key] = values
-		}
-	}
+	keepRetained(jobTags, c.jobTags, retained)
 	c.jobTags = jobTags
+	keepRetained(jobAutomation, c.jobAutomation, retained)
+	c.jobAutomation = jobAutomation
 
 	pruneCompletedRunsCounter(c, retained)
 	seedCompletedRunsCounter(c, knownJobs)
 	pruneLastRunStatus(c, retained)
 
 	return nil
+}
+
+// keepRetained copies into next the previous value of every job that is
+// missing from this roster but still retained. Not replaced wholesale like the
+// schedule maps: an alert joined on a per-job series would go silent for
+// exactly the broken code location retainedJobs guards against.
+func keepRetained[V any](next, previous map[JobKey]V, retained map[JobKey]struct{}) {
+	for key, value := range previous {
+		if _, inRoster := next[key]; inRoster {
+			continue
+		}
+		if _, ok := retained[key]; ok {
+			next[key] = value
+		}
+	}
 }
 
 // jobAbsenceGraceScrapes is how many consecutive definitions-roster
