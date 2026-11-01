@@ -1214,6 +1214,37 @@
       }
     },
     {
+      "title": "Job Last Success Age",
+      "description": "Seconds since each job last finished a successful run. It keeps rising through failed runs and through runs that never start, so a job that has quietly stopped succeeding stands out. Only covers successes the exporter has seen since it started.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_last_success_timestamp_seconds",
+          "legendFormat": "{{job_name}} ({{location}})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 77
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
       "title": "Op Pool Concurrency",
       "description": "Steps behind an op/step concurrency pool, by state: active (slot claimed, step running), assigned (slot reserved, not yet running), pending (waiting, not yet assigned). A different mechanism from Run Queue Backlog by Concurrency Key: this tracks individual steps sharing a pool across the whole instance, not whole runs queued behind a run-level tag.",
       "type": "timeseries",

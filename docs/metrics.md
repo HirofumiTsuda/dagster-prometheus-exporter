@@ -46,6 +46,36 @@ Labels: `job_name`, `location`, `status`
 
 Duration (`endTime - creationTime`) of the most recently completed run per job. Tracks the same run as `dagster_last_run_info` (same lifetime, same `status` label), so a job that has never completed a run has no series for either — there's no seeded `0`. For a run that Dagster retried, that is the duration of the attempt that settled the outcome, not of all attempts together.
 
+## `dagster_last_run_end_timestamp_seconds` (Gauge)
+
+Labels: `job_name`, `location`, `status`
+
+Unix timestamp (`endTime`) of the most recently completed run per job: the same run as `dagster_last_run_info` (same lifetime, same `status` label). Exported as a timestamp rather than an age, like the tick and heartbeat timestamps, so the age is computed at query time.
+
+It puts a time on the last run's outcome, which `dagster_last_run_info` alone can't. A failure alert can then be limited to recent failures, so a job that failed and was never run again stops alerting on its own instead of firing until someone notices:
+
+```promql
+dagster_last_run_info{status="failure"} == 1
+and on (job_name, location)
+time() - dagster_last_run_end_timestamp_seconds < 24 * 3600
+```
+
+Absent for a run that Dagster recorded no end time for, since `0` would read as 1970.
+
+## `dagster_last_success_timestamp_seconds` (Gauge)
+
+Labels: `job_name`, `location`
+
+Unix timestamp (`endTime`) of the most recent successful run per job, whatever ran after it. It is the usual Prometheus signal for batch work: alert when a job hasn't succeeded within its expected cadence.
+
+```promql
+time() - dagster_last_success_timestamp_seconds > 26 * 3600
+```
+
+That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
+
+Kept in memory, like `dagster_last_run_info`: after the exporter restarts it only knows successes from runs that finished since then (plus `LOOKBACK_WINDOW_MINUTES`), so a job has no series until its next success. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
+
 ## `dagster_job_tags` (Gauge)
 
 Labels: `job_name`, `location`, plus one `tag_<key>` per key in `JOB_TAG_LABELS`
