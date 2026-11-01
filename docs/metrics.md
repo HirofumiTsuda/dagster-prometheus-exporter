@@ -72,7 +72,7 @@ Unix timestamp (`endTime`) of the most recent successful run per job, whatever r
 time() - dagster_last_success_timestamp_seconds > 26 * 3600
 ```
 
-That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
+That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). It can't fire for a job that hasn't succeeded since the exporter started, because that job has no series here; if its runs fail, the `dagster_last_run_info{status="failure"}` alert is the one that fires. Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
 
 Kept in memory, like `dagster_last_run_info`: after the exporter restarts it only knows successes from runs that finished since then (plus `LOOKBACK_WINDOW_MINUTES`), so a job has no series until its next success. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
 

@@ -233,7 +233,8 @@ and on (job_name, location)
 time() - dagster_last_run_end_timestamp_seconds < 24 * 3600
 
 # Alert: a job hasn't succeeded in 26 hours (failed runs, runs that never
-# start or hang, a retry that never launched)
+# start or hang, a retry that never launched). A job with no success since the
+# exporter started has no series, so this leaves it to the failure alert above.
 time() - dagster_last_success_timestamp_seconds > 26 * 3600
 
 # The same, only for jobs that a schedule or sensor still launches: a job
