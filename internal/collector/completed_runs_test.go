@@ -237,6 +237,8 @@ func TestPruneLastRunStatus(t *testing.T) {
 	c.lastRunStatus[stillHereKey] = lastRunEntry{status: "FAILURE", endTime: 100}
 	c.lastSuccessTime[goneKey] = 100
 	c.lastSuccessTime[stillHereKey] = 50
+	c.seededJobs[goneKey] = struct{}{}
+	c.seededJobs[stillHereKey] = struct{}{}
 
 	pruneLastRunStatus(c, map[JobKey]struct{}{stillHereKey: {}})
 
@@ -244,6 +246,8 @@ func TestPruneLastRunStatus(t *testing.T) {
 	assert.Contains(t, c.lastRunStatus, stillHereKey)
 	assert.NotContains(t, c.lastSuccessTime, goneKey)
 	assert.Contains(t, c.lastSuccessTime, stillHereKey)
+	assert.NotContains(t, c.seededJobs, goneKey, "a removed job is read again if it comes back")
+	assert.Contains(t, c.seededJobs, stillHereKey)
 }
 
 func TestSeedCompletedRunsCounter(t *testing.T) {

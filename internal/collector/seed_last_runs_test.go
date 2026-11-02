@@ -165,6 +165,44 @@ func TestCollectCompletedRunsSeedsTheRosterJobs(t *testing.T) {
 		gaugeValues(t, c, "dagster_last_success_timestamp_seconds"))
 }
 
+func TestSeedLastRunsTreatsADagsterErrorAsAFailedRead(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"data":{` +
+			`"r0":{"__typename":"PythonError","message":"dagster exploded","stack":[]},` +
+			`"s0":{"__typename":"Runs","results":[]}}}`))
+		assert.NoError(t, err)
+	}))
+	defer ts.Close()
+	c := seedCollector(t, ts.URL, seedKey)
+
+	err := seedLastRuns(t.Context(), c)
+	require.ErrorContains(t, err, "PythonError")
+	assert.NotContains(t, c.seededJobs, seedKey,
+		"a Dagster error is not 'no runs': the job is read again on the next scrape")
+}
+
+func TestCollectCompletedRunsStillCountsWhenTheSeedFails(t *testing.T) {
+	base := time.Now().Unix()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GraphQLRequest
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		if strings.Contains(req.Query, "SeedLastRuns") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(runsResponse(completedRun("run_a", "job_a", base, base))))
+		assert.NoError(t, err)
+	}))
+	defer ts.Close()
+	c := seedCollector(t, ts.URL, seedKey)
+
+	require.Error(t, CollectCompletedRuns(t.Context(), c), "the failed seed shows as a failed scrape")
+	assert.Equal(t, float64(1), testutil.ToFloat64(c.completedRunsCounter.WithLabelValues("job_a", "loc", "success")),
+		"a seed that keeps failing must not hold back the counters")
+}
+
 func TestSeedLastRunsRetriesJobsAfterAFailedRequest(t *testing.T) {
 	s := &seedServer{success: []string{seedRun("run_a", "SUCCESS", 100, "")}}
 	c := seedCollector(t, s.start(t), seedKey)
