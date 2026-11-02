@@ -1,0 +1,55 @@
+name: Dagster compatibility
+
+# The pinned-version e2e (helm-e2e.yml) asserts every metric family on one
+# Dagster version. This asks a narrower question of several: does every query
+# the exporter sends still get accepted? Dagster's GraphQL API is not a stable
+# contract, so a new release, or a change to a query here, can break a version
+# nobody is looking at.
+#
+# Weekly because Dagster releases come from outside and nothing in this repo
+# changes when they do. Also on a pull request that touches the queries, the
+# fixture or this file, since that is the change that can break an old version.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch: {}
+  pull_request:
+    branches: [main]
+    paths:
+      - "internal/collector/queries/**"
+      - "dev/compat/**"
+      - ".github/workflows/dagster-compat.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    strategy:
+      # One broken version must not hide the result of the others.
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest version in the README's table.
+          - { name: "1.9.13", spec: "==1.9.13" }
+          # The last patch of each minor between it and the pinned one.
+          - { name: "1.10.21", spec: "==1.10.21" }
+          - { name: "1.11.16", spec: "==1.11.16" }
+          - { name: "1.12.22", spec: "==1.12.22" }
+          # The newest of the line the dev stack is pinned to.
+          - { name: "1.13.x", spec: ">=1.13,<1.14" }
+          # No upper bound, so a breaking release shows up here first.
+          - { name: "latest", spec: "" }
+    name: Dagster ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - run: dev/compat/check.sh '${{ matrix.spec }}'
