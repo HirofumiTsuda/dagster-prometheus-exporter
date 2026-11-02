@@ -29,9 +29,9 @@ func TestDagsterCollectorDescribeAndCollect(t *testing.T) {
 	// agentsDesc, agentLastHeartbeatDesc, assetStaleStatusDesc, assetLastMaterializationStatusDesc,
 	// assetLastMaterializationTimestampDesc, opPoolActiveSlotsDesc,
 	// opPoolAssignedStepsDesc, opPoolPendingStepsDesc, opPoolLimitDesc,
-	// jobTagsDesc, plus one each from completedRunsCounter and
-	// scrapeErrorsCounter.
-	assert.Equal(t, 30, descCount)
+	// jobTagsDesc, jobAutomationDesc, plus one each from completedRunsCounter
+	// and scrapeErrorsCounter.
+	assert.Equal(t, 31, descCount)
 
 	c.RecordScrapeResult("active_runs", 10*time.Millisecond, nil)
 

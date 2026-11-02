@@ -19,6 +19,9 @@ query GetDefinitionsRoster {
         schedules {
           name
           cronSchedule
+          # Which job each schedule and sensor launches is read here, not from
+          # Job.schedules / Job.sensors, which Dagster resolves once per job.
+          pipelineName
           scheduleState {
             status
             # afterTimestamp keeps Dagster off its batch loader. For ticks(limit: 1)
@@ -39,6 +42,9 @@ query GetDefinitionsRoster {
         }
         sensors {
           name
+          targets {
+            pipelineName
+          }
           sensorState {
             status
             # afterTimestamp keeps Dagster off its batch loader. For ticks(limit: 1)

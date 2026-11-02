@@ -72,9 +72,24 @@ Unix timestamp (`endTime`) of the most recent successful run per job, whatever r
 time() - dagster_last_success_timestamp_seconds > 26 * 3600
 ```
 
-That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
+That one rule covers failures, runs that never start or hang, and a failed attempt marked `dagster/will_retry=true` whose retry is never launched (which `dagster_last_run_info` doesn't show, see above). It can't fire for a job that hasn't succeeded since the exporter started, because that job has no series here; if its runs fail, the `dagster_last_run_info{status="failure"}` alert is the one that fires. Jobs run at different cadences, so a single threshold rarely fits all of them; a cadence tag exported through `JOB_TAG_LABELS` lets the threshold differ per group of jobs.
 
 Kept in memory, like `dagster_last_run_info`: after the exporter restarts it only knows successes from runs that finished since then (plus `LOOKBACK_WINDOW_MINUTES`), so a job has no series until its next success. Removed along with the job, with the same grace period as `dagster_completed_runs_total`.
+
+## `dagster_job_automation_running` (Gauge)
+
+Labels: `job_name`, `location`
+
+`1` if a schedule or sensor that is turned on launches the job, `0` if none does, one series per job. A job that is only launched some other way (by hand, through the API, by another job) reads `0`.
+
+It tells a job nobody runs any more apart from one that is broken. Scoping an alert to automated jobs makes it stop when someone deliberately switches the schedule or sensor off, instead of firing forever, while a job that is still scheduled keeps alerting until it is fixed:
+
+```promql
+(time() - dagster_last_success_timestamp_seconds > 26 * 3600)
+and on (job_name, location) dagster_job_automation_running == 1
+```
+
+The links come from each schedule's job and each sensor's targets in the definitions roster, so a sensor's targets are only the jobs it declares. A sensor that launches runs of jobs it doesn't declare as targets doesn't mark them. Like `dagster_job_tags`, a job that drops out of the roster keeps its last value while its code location is failing to load, so the broken deploy doesn't drop it out of alerts scoped on this metric.
 
 ## `dagster_job_tags` (Gauge)
 

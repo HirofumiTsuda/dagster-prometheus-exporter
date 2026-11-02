@@ -442,6 +442,7 @@ type GraphQLDefinitionsRosterResponse struct {
 				Schedules []struct {
 					Name          string `json:"name"`
 					CronSchedule  string `json:"cronSchedule"`
+					PipelineName  string `json:"pipelineName"`
 					ScheduleState struct {
 						Status string `json:"status"`
 						Ticks  []struct {
@@ -451,7 +452,10 @@ type GraphQLDefinitionsRosterResponse struct {
 					} `json:"scheduleState"`
 				} `json:"schedules"`
 				Sensors []struct {
-					Name        string `json:"name"`
+					Name    string `json:"name"`
+					Targets []struct {
+						PipelineName string `json:"pipelineName"`
+					} `json:"targets"`
 					SensorState struct {
 						Status string `json:"status"`
 						Ticks  []struct {

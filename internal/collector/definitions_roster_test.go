@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -187,6 +188,8 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 		"a broken code location must not silence the job's last-run status")
 	assert.Contains(t, c.jobTags, key,
 		"a broken code location must not drop the job's tags out of alerts joined on them")
+	assert.Contains(t, c.jobAutomation, key,
+		"a broken code location must not drop the job out of alerts scoped to automated jobs")
 
 	// The location loads again, this time genuinely without job_a.
 	c.codeLocationLoadError = map[string]bool{"loc_a": false}
@@ -197,6 +200,42 @@ func TestCollectDefinitionsRosterKeepsCountersWhenACodeLocationBreaks(t *testing
 	assert.NotContains(t, c.trackedCompletedRunKeys, key)
 	assert.NotContains(t, c.lastRunStatus, key)
 	assert.NotContains(t, c.jobTags, key)
+	assert.NotContains(t, c.jobAutomation, key)
+}
+
+// A job that stays in the roster is also retained, so this checks that a new
+// roster's values replace the old ones instead of the old ones being kept.
+func TestCollectDefinitionsRosterReplacesTheValuesOfAJobStillInTheRoster(t *testing.T) {
+	roster := func(owner, scheduleStatus string) string {
+		return fmt.Sprintf(`{"data": {"repositoriesOrError": {"__typename": "RepositoryConnection", "nodes": [{
+			"name": "repo", "location": {"name": "loc_a"},
+			"jobs": [{"name": "job_a", "tags": [{"key": "owner", "value": %q}]}],
+			"schedules": [{"name": "sched_a", "pipelineName": "job_a", "scheduleState": {"status": %q, "ticks": []}}],
+			"sensors": []
+		}]}}}`, owner, scheduleStatus)
+	}
+	responses := []string{roster("team_a", "RUNNING"), roster("team_b", "STOPPED")}
+	call := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(responses[call]))
+		assert.NoError(t, err)
+		call++
+	}))
+	defer ts.Close()
+
+	c := NewDagsterCollector(t.Context(), ts.URL, "", time.Hour, time.Hour, 500, 5*time.Minute)
+	c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
+
+	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+	require.NoError(t, CollectDefinitionsRoster(t.Context(), c))
+
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc_a": 0},
+		gaugeValues(t, c, "dagster_job_automation_running"),
+		"the schedule was switched off")
+	assert.Equal(t, map[string]float64{"job_name=job_a,location=loc_a,tag_owner=team_b": 1},
+		gaugeValues(t, c, "dagster_job_tags"),
+		"the owner tag changed")
 }
 
 func TestCollectDefinitionsRosterReturnsErrorOnServerError(t *testing.T) {

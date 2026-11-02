@@ -1309,6 +1309,82 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       }
+    },
+    {
+      "title": "Job Automation",
+      "description": "Whether a schedule or sensor that is turned on launches each job. Alerts scoped to automated jobs stop for a job once nothing launches it any more.",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "dagster_job_automation_running",
+          "format": "table",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "Automated",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "Not automated",
+                        "color": "light-grey"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 93
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     }
   ],
   "templating": {
