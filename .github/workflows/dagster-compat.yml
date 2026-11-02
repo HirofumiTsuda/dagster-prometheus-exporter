@@ -6,13 +6,13 @@ name: Dagster compatibility
 # contract, so a new release, or a change to a query here, can break a version
 # nobody is looking at.
 #
-# Weekly because Dagster releases come from outside and nothing in this repo
+# Daily because Dagster releases come from outside and nothing in this repo
 # changes when they do. Also on a pull request that touches the queries, the
 # fixture or this file, since that is the change that can break an old version.
 
 on:
   schedule:
-    - cron: "0 4 * * 1"
+    - cron: "0 4 * * *"
   workflow_dispatch: {}
   pull_request:
     branches: [main]

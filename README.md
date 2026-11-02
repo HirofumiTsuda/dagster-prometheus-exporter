@@ -66,7 +66,7 @@ That said, a few other versions have been spot-checked against a real instance (
 
 The versions marked "all collectors scrape without GraphQL errors" were checked after `dagster_asset_stale_status` started to select `isPartitioned` (#194), against a minimal code location with partitioned and unpartitioned assets, a schedule and a sensor. That shows every query this exporter makes is accepted, and that a partitioned asset has no `dagster_asset_stale_status` series on any of them. It does not assert every metric family the way the other rows do, since it runs no jobs to trigger the rarer ones.
 
-The [Dagster compatibility workflow](.github/workflows/dagster-compat.yml) repeats that check every week, and on any pull request that changes a query, against 1.9.13, the last patch of 1.10, 1.11 and 1.12, the newest 1.13.x and the newest Dagster release. Run `dev/compat/check.sh '==1.12.22'` to do the same for one version locally.
+The [Dagster compatibility workflow](.github/workflows/dagster-compat.yml) repeats that check every day, and on any pull request that changes a query, against 1.9.13, the last patch of 1.10, 1.11 and 1.12, the newest 1.13.x and the newest Dagster release. Run `dev/compat/check.sh '==1.12.22'` to do the same for one version locally.
 
 Versions between these are more likely than not to work too, but haven't been individually verified. If you hit a GraphQL error running against a different version, please [open an issue](https://github.com/HirofumiTsuda/dagster-prometheus-exporter/issues/new/choose).
 
