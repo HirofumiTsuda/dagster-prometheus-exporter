@@ -49,6 +49,8 @@ func fakeDagster(t *testing.T) *httptest.Server {
 			out = fmt.Sprintf(`{"data":{"assetsLatestInfo":[{"assetKey":{"path":["asset_a"]},"latestRun":{"status":"SUCCESS","endTime":%d}}]}}`, now)
 		case strings.Contains(query, "assetNodes"):
 			out = `{"data":{"assetNodes":[{"assetKey":{"path":["asset_a"]},"isPartitioned":false,"staleStatus":"FRESH"}]}}`
+		case strings.Contains(query, "SeedLastRuns"):
+			out = `{"data":{"r0":{"__typename":"Runs","results":[]},"s0":{"__typename":"Runs","results":[]}}}`
 		case strings.Contains(query, "runsOrError") && strings.Contains(query, `"SUCCESS"`):
 			out = `{"data":{"runsOrError":{"__typename":"Runs","results":[` + run("done", "SUCCESS", "") + `]}}}`
 		case strings.Contains(query, "runsOrError"):

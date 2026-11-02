@@ -78,6 +78,13 @@ func CollectCompletedRuns(ctx context.Context, c *DagsterCollector) error {
 		c.mutex.Unlock()
 	}
 
+	// After the incremental fetch, not before it: a seed that keeps failing
+	// must not hold back the counters.
+	if err := seedLastRuns(ctx, c); err != nil {
+		log.Printf("failed to collect completed runs from dagster: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -215,6 +222,11 @@ func pruneLastRunStatus(c *DagsterCollector, retained map[JobKey]struct{}) {
 	for key := range c.lastSuccessTime {
 		if _, ok := retained[key]; !ok {
 			delete(c.lastSuccessTime, key)
+		}
+	}
+	for key := range c.seededJobs {
+		if _, ok := retained[key]; !ok {
+			delete(c.seededJobs, key)
 		}
 	}
 }

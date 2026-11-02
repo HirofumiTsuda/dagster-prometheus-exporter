@@ -59,15 +59,19 @@ type DagsterCollector struct {
 	jobAbsenceStreak         map[JobKey]int
 	lastRunStatus            map[JobKey]lastRunEntry
 	lastSuccessTime          map[JobKey]float64
-	trackedCompletedRunKeys  map[JobKey]struct{}
-	lastSeenUpdateTime       float64
-	runsPageSize             int
-	scrapeResults            map[string]scrapeResult
-	codeLocationLoadError    map[string]bool
-	daemonHealth             map[string]daemonHealthEntry
-	agents                   *agentsSummary
-	assetStatus              map[string]assetStatusEntry
-	opPoolConcurrency        map[string]opPoolConcurrencyEntry
+	// jobRepositories is each roster job's repository name, for seedLastRuns;
+	// seededJobs holds the jobs it has already read.
+	jobRepositories         map[JobKey]string
+	seededJobs              map[JobKey]struct{}
+	trackedCompletedRunKeys map[JobKey]struct{}
+	lastSeenUpdateTime      float64
+	runsPageSize            int
+	scrapeResults           map[string]scrapeResult
+	codeLocationLoadError   map[string]bool
+	daemonHealth            map[string]daemonHealthEntry
+	agents                  *agentsSummary
+	assetStatus             map[string]assetStatusEntry
+	opPoolConcurrency       map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
 	// jobTags holds each job's values for those keys, in the same order.
 	jobTagKeys    []string
@@ -297,6 +301,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		jobAbsenceStreak:             make(map[JobKey]int),
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
 		lastSuccessTime:              make(map[JobKey]float64),
+		seededJobs:                   make(map[JobKey]struct{}),
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,

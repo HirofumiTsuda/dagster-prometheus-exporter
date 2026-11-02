@@ -41,6 +41,8 @@ Fetching completed runs is incremental, not a full re-scan every cycle: after th
 
 Any single fetch — the initial backfill or an unusually large batch of updates — pages through `runsOrError` via cursor (`RUNS_PAGE_SIZE` per page) and folds each page into the in-memory counters as it arrives, rather than buffering the full result set in memory first.
 
+The incremental fetch only sees runs that finish after the exporter starts, so on its own a restart would empty the last-run metrics (`dagster_last_run_info` and its siblings, `dagster_last_success_timestamp_seconds`) until every job ran again. After each incremental fetch, the completed-runs collector therefore reads the latest runs of every roster job it hasn't read yet: its last few completed runs and its last success, filtered on the job name and the run's hidden `.dagster/repository` tag so same-named jobs in different locations stay apart. One request covers up to 50 jobs, and each batch is applied as it arrives, so a startup that runs out of time continues on the next scrape. These runs go through the same update as the incremental fetch (newer runs win, retried attempts are skipped) and never touch the counters, which would otherwise count history again on every restart. A failing read shows as a failed `completed_runs` scrape and is retried on the next one.
+
 ## No retries within a scrape
 
 A failed GraphQL call is not retried inside the scrape. The collector returns the error, `dagster_exporter_last_scrape_success` reads `0` for that collector and `dagster_exporter_scrape_errors_total` goes up, and the next attempt comes one interval later (15s by default). `/metrics` keeps serving the last known state in the meantime.
