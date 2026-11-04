@@ -93,6 +93,8 @@ Two of the fifteen ship **disabled**, because no single threshold fits every ins
 
 `jobLastRunFailed` fires while a job's last attempt has failed (a failed attempt that Dagster retries doesn't count). It keeps firing until the job succeeds as long as a schedule or sensor still launches the job, and for 24 hours after the failure otherwise, so a job nobody runs any more doesn't alert forever.
 
+One job needs care: asset runs started by declarative automation all run in the shared `__ASSET_JOB`, which counts as automated only while `default_automation_condition_sensor` (or another sensor that targets it) is turned on. With that sensor off, the OSS default, a failed `__ASSET_JOB` run alerts for 24 hours like a manual job, and `jobNoRecentSuccess` leaves it out. For asset runs, `assetMaterializationFailed` and `assetMaterializationStale` alert per asset regardless of the sensor.
+
 Each entry under `alerts.rules` is a complete rule (`alert`/`expr`/`for`/`labels`/`annotations`), so a values file only needs to set the fields it's changing — Helm deep-merges maps, and the rest of a built-in rule's defaults pass through untouched. That covers disabling one, tightening or loosening a threshold, or replacing `expr` entirely (e.g. to exclude a specific job/sensor by label). Adding an alert this chart doesn't know about is the same operation: give it a new key with the full rule spec:
 
 ```yaml
