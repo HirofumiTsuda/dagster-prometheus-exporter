@@ -5,6 +5,10 @@ on:
     tags:
       - "v*.*.*"
 
+# Nothing here writes to the repository. A job that needs more asks for it.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}

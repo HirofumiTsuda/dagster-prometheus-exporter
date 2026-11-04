@@ -6,6 +6,10 @@ on:
       - "chart-v*.*.*"
   workflow_dispatch: {}
 
+# Nothing here writes to the repository. A job that needs more asks for it.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   CHART_PATH: charts/dagster-prometheus-exporter
