@@ -14,9 +14,13 @@ api="https://grafana.com/api/dashboards/${id}"
 # Prints "<latest revision> <true|false: its JSON equals the file>". jq -e
 # fails on an empty or non-JSON body, so a broken read is retried instead of
 # being taken for a changed dashboard.
+#
+# gnetId is left out of both sides: grafana.com drops it when it stores a
+# revision, so comparing it makes every run look like a change and publish a
+# new, identical revision.
 read_state() {
   curl -fsS --connect-timeout 10 --max-time 30 "${api}" |
-    jq -er --slurpfile want "${file}" '"\(.revision|numbers) \((.json|objects) == $want[0])"'
+    jq -er --slurpfile want "${file}" '"\(.revision|numbers) \((.json|objects|del(.gnetId)) == ($want[0]|del(.gnetId)))"'
 }
 
 state=""
