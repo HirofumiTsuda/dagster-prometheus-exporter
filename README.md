@@ -332,6 +332,25 @@ helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prom
 
 Metrics are then available at `http://localhost:9101/metrics`.
 
+### Verifying the image
+
+From v0.10.0, the image on GHCR is signed with [cosign](https://github.com/sigstore/cosign) (keyless, by digest) by the release workflow, and carries an SBOM and a provenance attestation. Earlier images are not signed. To check that an image was built by this repository's `docker-publish.yml` from a release tag:
+
+```sh
+cosign verify ghcr.io/hirofumitsuda/dagster-prometheus-exporter:0.10.0 \
+  --certificate-identity-regexp '^https://github\.com/HirofumiTsuda/dagster-prometheus-exporter/\.github/workflows/docker-publish\.yml@refs/tags/v.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+To read the attestations:
+
+```sh
+docker buildx imagetools inspect ghcr.io/hirofumitsuda/dagster-prometheus-exporter:0.10.0 --format '{{json .SBOM}}'
+docker buildx imagetools inspect ghcr.io/hirofumitsuda/dagster-prometheus-exporter:0.10.0 --format '{{json .Provenance}}'
+```
+
+The release workflow also scans the image with Trivy before it signs it, and fails on any fixed HIGH or CRITICAL finding. A weekly workflow scans the published image, the Helm chart and the Python lock file.
+
 ### Dagster+
 
 The exporter works against a [Dagster+](https://dagster.io/plus) deployment as well as OSS Dagster. Two things differ from the OSS setup above:
