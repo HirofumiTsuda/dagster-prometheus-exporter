@@ -1,0 +1,36 @@
+name: Grafana dashboard
+
+# Keeps the dashboard on grafana.com (ID 25815) at the version in main. It was
+# updated by hand and fell behind. Every run publishes the tip of main, so
+# re-running an old run cannot roll grafana.com back to an older dashboard.
+# The listing screenshots stay manual: grafana.com's images API is read-only.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/dagster-dashboard.grafana-com.json
+      - .github/scripts/publish-grafana-dashboard.sh
+      - .github/workflows/grafana-dashboard.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grafana-com
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - run: .github/scripts/publish-grafana-dashboard.sh 25815 docs/dagster-dashboard.grafana-com.json
+        env:
+          GRAFANA_COM_API_KEY: ${{ secrets.GRAFANA_COM_API_KEY }}
