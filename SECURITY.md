@@ -6,9 +6,16 @@ Please report it privately via [GitHub Security Advisories](https://github.com/H
 
 Include what you'd include in a normal bug report — steps to reproduce, affected version/commit, and what the actual impact is — plus anything specific to why it's a security issue rather than a correctness one.
 
-## Response
+## Response and disclosure
 
-Best-effort, not an SLA. This is maintained by one person outside of paid work, not a company with a security team. If you don't hear back within a reasonable time, a follow-up comment on the advisory is welcome.
+Best-effort, not an SLA. This is maintained by one person outside of paid work, not a company with a security team. The aim is:
+
+- to acknowledge a report within 14 days;
+- to ship a fix, or a mitigation you can apply, within 90 days of the report.
+
+If either date will be missed, I will say so on the advisory instead of staying silent. If you don't hear back within 14 days, a follow-up comment on the advisory is welcome.
+
+Disclosure is coordinated: please keep the details private until a fixed release is out. Once it is, the advisory is published, credits the reporter if they want that, and names the affected and fixed versions. If a report has not been fixed after 90 days, you are free to disclose it.
 
 ## Supported versions
 
