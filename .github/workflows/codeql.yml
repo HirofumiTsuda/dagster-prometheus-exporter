@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+# Nothing here writes to the repository. A job that needs more asks for it.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
