@@ -64,7 +64,7 @@ That said, a few other versions have been spot-checked against a real instance (
 | **1.13.15** | ✅ Compatible — the pinned/CI version |
 | 1.13.19 | ✅ Compatible |
 | 1.13.26 | ✅ Compatible (all collectors scrape without GraphQL errors) — the latest at the time of writing |
-| Dagster+ | ✅ All seven collectors, and the Dagster+-only `agents` collector, scrape successfully against a trial deployment. Dagster+ reports a build hash as its version, and a partitioned asset's `dagster_asset_stale_status` was not exercised there |
+| Dagster+ | ✅ The first seven collectors, and the Dagster+-only `agents` collector, scrape successfully against a trial deployment. The `asset_checks` query was run on Dagster+ by hand, but the exporter ran it on open-source Dagster only. Dagster+ reports a build hash as its version, and a partitioned asset's `dagster_asset_stale_status` was not exercised there |
 
 The versions marked "all collectors scrape without GraphQL errors" were checked after `dagster_asset_stale_status` started to select `isPartitioned` (#194), against a minimal code location with partitioned and unpartitioned assets, a schedule and a sensor. That shows every query this exporter makes is accepted, and that a partitioned asset has no `dagster_asset_stale_status` series on any of them. It does not assert every metric family the way the other rows do, since it runs no jobs to trigger the rarer ones.
 
@@ -138,10 +138,11 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_asset_stale_status` | Gauge | Whether an asset's data is missing, stale, or fresh. |
 | `dagster_asset_last_materialization_status` | Gauge | Outcome of an asset's most recently launched materializing run — the only one of the two that shows a failed run, since staleness alone can't tell "failed" from "never run". |
 | `dagster_asset_last_materialization_timestamp_seconds` | Gauge | When an asset was last materialized, regardless of outcome — catches a leaf asset that's gone quiet, since stale status alone can't (it's a `code_version` comparison, not elapsed time). |
+| `dagster_asset_check_status` | Gauge | Outcome of an asset check's latest execution (`succeeded`, `failed`, `execution_failed`, ...) with its severity, so a check that fails while the run succeeds can alert. |
 
 ### Exporter self-health
 
-These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `op_pool_concurrency`, and `agents` on Dagster+ — see [docs/architecture.md](docs/architecture.md)).
+These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `op_pool_concurrency`, and `agents` on Dagster+ — see [docs/architecture.md](docs/architecture.md)).
 
 | Metric | Type | Description |
 | --- | --- | --- |

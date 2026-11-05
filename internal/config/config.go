@@ -24,6 +24,7 @@ var CollectorNames = []string{
 	"code_location_status",
 	"daemon_health",
 	"asset_status",
+	"asset_checks",
 	"op_pool_concurrency",
 }
 

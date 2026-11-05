@@ -273,6 +273,34 @@ This exists because `dagster_asset_stale_status` only detects staleness *relativ
 
 `endTime`, not `updateTime`, to match the existing convention: `dagster_last_run_duration_seconds` already uses `endTime - creationTime` for completed jobs, so this stays consistent with how "when did this run finish" is computed elsewhere in the codebase.
 
+## `dagster_asset_check_status` (Gauge)
+
+Labels: `asset_key`, `check_name`, `status`, `severity`
+
+Always `1`; the outcome of an asset check's latest execution for the asset's latest materialization (`assetChecksOrError`, `executionForLatestMaterialization`). One series per check that has run.
+
+| `status` | Meaning |
+| --- | --- |
+| `succeeded` | The check ran and passed. |
+| `failed` | The check ran and the data is bad. |
+| `execution_failed` | The check could not run, for example it raised an exception. Not a statement about the data. |
+| `in_progress` | The check is running now. |
+| `skipped` | Dagster skipped the check. |
+
+`severity` is `error` or `warn`, the severity the check reported. A `failed` check with `severity="warn"` is a warning, so an alert that should not page on it filters on `severity="error"`. It is empty for `execution_failed`, because a check that could not run has no evaluation.
+
+```promql
+dagster_asset_check_status{status="failed", severity="error"} == 1
+```
+
+A failed check does not fail its run, so `dagster_asset_last_materialization_status` stays `success` and cannot show it.
+
+A check that has never run for the asset's latest materialization has no series, the same as an asset that never ran has none in `dagster_asset_last_materialization_status`. When an asset is materialized again, its checks have no execution for the new materialization until they run, and their series disappear until then. If a check is missing, alert on its absence separately; `absent()` needs one expression per check you care about.
+
+An asset whose checks cannot be read (`assetChecksOrError` answers with an error type such as a code location that needs an upgrade) is left out and logged, so it does not hide the checks of the other assets.
+
+This is the `asset_checks` collector, separate from `asset_status` so it can be given its own `ASSET_CHECKS_SCRAPING_INTERVAL_SECONDS`. Verified against open-source Dagster 1.13.25 with one passing check, one failing, one failing with `AssetCheckSeverity.WARN`, one that raised, and one that never ran.
+
 ## `dagster_op_pool_concurrency_active_slots` (Gauge)
 
 Labels: `pool`
@@ -313,7 +341,7 @@ Absent for a pool Dagster reports no limit for at all — the schema makes `limi
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, or `op_pool_concurrency` (the seven collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, or `op_pool_concurrency` (the eight collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 
