@@ -261,6 +261,12 @@ jobs:
           echo "$METRICS" | grep -qF 'dagster_job_tags{job_name="heavy_job",location="dev-dagster-workspace",tag_dagster_concurrency_key="heavy_limit"} 1' \
             || { echo "::error::heavy_job did not report its dagster/concurrency_key tag on dagster_job_tags"; exit 1; }
 
+          # The family being present only proves ASSET_METADATA_VALUES was
+          # rendered and read; this checks the value good_asset recorded.
+          echo "--- asset_metadata: good_asset's row_count ---"
+          echo "$METRICS" | grep -qF 'dagster_asset_metadata_value{asset_key="good_asset",label="row_count"} 3' \
+            || { echo "::error::good_asset did not report its row_count on dagster_asset_metadata_value"; exit 1; }
+
           # Open-source Dagster has no agents field. The collector must stay
           # off without a token, or it would fail every scrape and sit at
           # last_scrape_success 0.

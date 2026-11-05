@@ -47,6 +47,8 @@ func fakeDagster(t *testing.T) *httptest.Server {
 			out = `{"data":{"instance":{"concurrencyLimits":[{"concurrencyKey":"pool_a","activeSlotCount":1,"assignedStepCount":0,"pendingStepCount":2,"limit":2,"usingDefaultLimit":false}]}}}`
 		case strings.Contains(query, "assetsLatestInfo"):
 			out = fmt.Sprintf(`{"data":{"assetsLatestInfo":[{"assetKey":{"path":["asset_a"]},"latestRun":{"status":"SUCCESS","endTime":%d}}]}}`, now)
+		case strings.Contains(query, "assetMaterializations"):
+			out = fmt.Sprintf(`{"data":{"assetNodes":[{"assetKey":{"path":["asset_a"]},"isPartitioned":false,"assetMaterializations":[{"timestamp":"%d000","metadataEntries":[{"label":"row_count","intRepr":"42"}]}]}]}}`, now)
 		case strings.Contains(query, "partitionBackfillsOrError"):
 			out = fmt.Sprintf(`{"data":{"recent":{"__typename":"PartitionBackfills","results":[{"status":"REQUESTED","timestamp":%d}]},"active":{"__typename":"PartitionBackfills","results":[{"status":"REQUESTED","timestamp":%d}]}}}`, now, now)
 		case strings.Contains(query, "assetChecksOrError"):
@@ -76,6 +78,9 @@ func TestMetricsPassPromlint(t *testing.T) {
 	c.SeedScrapeHealth(config.ActiveCollectorNames(true))
 	// dagster_job_tags has no series until JOB_TAG_LABELS selects a tag.
 	c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
+	// The asset_metadata collector asks Dagster nothing until it is told which
+	// assets to read.
+	c.SetAssetMetadataValues(map[string][]string{"asset_a": {"row_count"}})
 	scrapeDagster(t.Context(), c)
 	// scrapeDagster leaves out the Dagster+ collectors, which need a token.
 	scrapeOne(t.Context(), c, "agents")

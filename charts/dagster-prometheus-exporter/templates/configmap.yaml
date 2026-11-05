@@ -9,6 +9,12 @@ data:
   {{- range $key, $value := .Values.env }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+  {{- if .Values.assetMetadataValues }}
+  {{- if hasKey $.Values.env "ASSET_METADATA_VALUES" }}
+  {{- fail "set the asset metadata via assetMetadataValues or env.ASSET_METADATA_VALUES, not both (assetMetadataValues renders the variable itself)" }}
+  {{- end }}
+  ASSET_METADATA_VALUES: {{ .Values.assetMetadataValues | toJson | quote }}
+  {{- end }}
   {{- with include "dagster-prometheus-exporter.graphqlCAFile" . }}
   {{- if hasKey $.Values.env "DAGSTER_GRAPHQL_CA_FILE" }}
   {{- fail "set the CA via dagsterGraphqlCA or env.DAGSTER_GRAPHQL_CA_FILE, not both (dagsterGraphqlCA mounts the file and sets the variable itself)" }}

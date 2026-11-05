@@ -40,7 +40,7 @@ for _ in $(seq 60); do
 done
 curl -fs localhost:3000/server_info >/dev/null || { cat "$work/dagster.log"; echo "Dagster did not start"; exit 1; }
 
-DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql PORT=9101 "$work/exporter" >"$work/exporter.log" 2>&1 &
+ASSET_METADATA_VALUES='{"plain_asset":["row_count"]}' DAGSTER_GRAPHQL_ENDPOINT=http://localhost:3000/graphql PORT=9101 "$work/exporter" >"$work/exporter.log" 2>&1 &
 exporter_pid=$!
 sleep 25
 

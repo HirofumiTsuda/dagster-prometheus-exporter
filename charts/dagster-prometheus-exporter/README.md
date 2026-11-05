@@ -32,6 +32,7 @@ helm install my-dagster-exporter ./dagster-prometheus-exporter/charts/dagster-pr
 | `port` | `9101` | Single source of truth for the container port, Service port, and the `PORT` env var. |
 | `service.type` | `ClusterIP` | Kubernetes Service type. |
 | `env` | `{}` | Environment variables passed to the exporter via a ConfigMap (`envFrom`). Keys match `internal/config/config.go` exactly. Don't put `DAGSTER_CLOUD_API_TOKEN` here; use `dagsterCloudApiToken` below. |
+| `assetMetadataValues` | `{}` | A map from an asset key (path segments joined by `/`) to the numeric metadata labels to export on `dagster_asset_metadata_value`, e.g. `orders: [row_count, accuracy]`. The chart renders it as the JSON that `ASSET_METADATA_VALUES` takes; setting both fails the render. Empty exports nothing. See [`dagster_asset_metadata_value`](../../docs/metrics.md#dagster_asset_metadata_value-gauge). |
 | `dagsterCloudApiToken.existingSecret` | `""` | Name of a Secret holding a Dagster+ API token, passed to the exporter as `DAGSTER_CLOUD_API_TOKEN`. Leave empty for OSS Dagster. See [Dagster+](#dagster). |
 | `dagsterCloudApiToken.key` | `token` | Key within that Secret. |
 | `dagsterGraphqlCA.existingSecret` / `dagsterGraphqlCA.existingConfigMap` | `""` | Name of a Secret or a ConfigMap holding a PEM file of CA certificates, for a GraphQL endpoint served under a private CA. The chart mounts that one key read-only and sets `DAGSTER_GRAPHQL_CA_FILE` to it. Set one of the two, not both. See [Private CA](#private-ca). |

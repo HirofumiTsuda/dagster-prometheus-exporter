@@ -35,6 +35,7 @@ var configEnvVars = []string{
 	"LOG_LEVEL",
 	"ASSET_STALE_STATUS_ENABLED",
 	"JOB_TAG_LABELS",
+	"ASSET_METADATA_VALUES",
 }
 
 func init() {
@@ -376,6 +377,36 @@ func TestLoadJobTagLabels(t *testing.T) {
 	setEnv(t, map[string]string{"JOB_TAG_LABELS": "team-name,team_name"})
 	_, err = Load()
 	require.ErrorContains(t, err, "JOB_TAG_LABELS", "different keys that come out as the same label")
+}
+
+func TestLoadAssetMetadataValues(t *testing.T) {
+	setEnv(t, nil)
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.AssetMetadataValues)
+
+	setEnv(t, map[string]string{"ASSET_METADATA_VALUES": `{"orders": ["row_count", "accuracy", "row_count"], "dbt/customers": ["row_count"]}`})
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{
+		"orders":        {"accuracy", "row_count"},
+		"dbt/customers": {"row_count"},
+	}, cfg.AssetMetadataValues, "labels of one asset are kept together, and a repeated one is not ambiguous")
+
+	for name, value := range map[string]string{
+		"not JSON":               `orders:row_count`,
+		"not an object":          `["orders"]`,
+		"labels not a list":      `{"orders": "row_count"}`,
+		"no label":               `{"orders": []}`,
+		"empty label":            `{"orders": [""]}`,
+		"empty key":              `{"": ["row_count"]}`,
+		"empty path segment":     `{"dbt//customers": ["row_count"]}`,
+		"label that is not text": `{"orders": [1]}`,
+	} {
+		setEnv(t, map[string]string{"ASSET_METADATA_VALUES": value})
+		_, err = Load()
+		require.ErrorContains(t, err, "ASSET_METADATA_VALUES", name)
+	}
 }
 
 func TestLoadTrustsTheCAInDagsterGraphQLCAFile(t *testing.T) {

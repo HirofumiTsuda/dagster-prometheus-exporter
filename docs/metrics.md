@@ -301,6 +301,55 @@ An asset whose checks cannot be read (`assetChecksOrError` answers with an error
 
 This is the `asset_checks` collector, separate from `asset_status` so it can be given its own `ASSET_CHECKS_SCRAPING_INTERVAL_SECONDS`. Verified against open-source Dagster 1.13.25 with one passing check, one failing, one failing with `AssetCheckSeverity.WARN`, one that raised, and one that never ran.
 
+## `dagster_asset_metadata_value` (Gauge)
+
+Labels: `asset_key`, `label`
+
+A numeric value (`int` or `float`) that an asset recorded on its latest materialization with `add_output_metadata` or `MaterializeResult(metadata=...)`: a row count, a file size, an accuracy score. A run can succeed while the data is wrong, such as a table with 0 rows, and this is what makes that alertable:
+
+```promql
+dagster_asset_metadata_value{asset_key="orders", label="row_count"} == 0
+```
+
+It is for knowing that a value dropped, not for long-term history. Trends over months belong in a table or a BI tool.
+
+## Choosing what to export
+
+Nothing is exported until `ASSET_METADATA_VALUES` lists it, for two reasons: every label of every asset would grow the series count without a bound, and Dagster reads each asset's latest materialization separately, so the cost grows with the number of assets asked for. Only the listed assets are asked for.
+
+The value is a JSON object from an asset key (the path segments joined by `/`, as in the `asset_key` label) to a list of metadata labels. Nobody should write that by hand. With the Helm chart, set a YAML map and the chart renders the JSON:
+
+```yaml
+assetMetadataValues:
+  orders: [row_count, accuracy]
+  dbt/customers: [row_count]
+```
+
+Outside Helm, generate it from whatever already holds the list. With Jsonnet:
+
+```jsonnet
+std.manifestJsonMinified({ orders: ['row_count', 'accuracy'], 'dbt/customers': ['row_count'] })
+```
+
+An asset key with a `/` inside a segment cannot be written this way. A malformed value, an empty list or an empty label stops the exporter at startup, so a typo does not silently export nothing.
+
+## What is skipped
+
+- **Text, URL, boolean and other kinds of entry.** Only `int` and `float` become series.
+- **NaN and infinity.** Dagster answers `null` for them, as JSON cannot carry them.
+- **A partitioned asset.** Its latest materialization is whichever partition ran last, so the value would jump between partitions as they run. One series per partition would be the cardinality problem the allow list avoids.
+- **An asset with no materialization, an asset Dagster does not define, and a label the materialization lacks.** No series, the same way `dagster_asset_last_materialization_status` handles an asset that never ran.
+
+An integer is read as a string and converted to a float64, so a count above 2^53 loses its last digits. Dagster returns `null` for an integer past 32 bits in the field it offers for numbers, which is why the exporter does not use that field: a row count above 2.1 billion would be dropped without a trace.
+
+## `dagster_asset_metadata_timestamp_seconds` (Gauge)
+
+Labels: `asset_key`
+
+Unix timestamp of the materialization the values of that asset were read from. A run that fails after a success leaves the last successful materialization in place, so the value stays and this timestamp stays with it. `time() - dagster_asset_metadata_timestamp_seconds` is how long the values have been stale, which `dagster_asset_last_materialization_timestamp_seconds` cannot say: that one is the end time of the latest run and moves on a failed run too.
+
+Verified against open-source Dagster 1.13.25 with an asset recording an int, a float, text, a URL, a boolean and NaN, an int of 5 billion, a partitioned asset, an asset that never ran, and an asset whose latest run failed after a success. Not checked: the metadata that dbt and other integrations record, and the cost on Dagster+.
+
 ## `dagster_backfills` (Gauge)
 
 Labels: `status`
@@ -374,7 +423,7 @@ Absent for a pool Dagster reports no limit for at all — the schema makes `limi
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `backfills`, or `op_pool_concurrency` (the nine collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `asset_metadata`, `backfills`, or `op_pool_concurrency` (the ten collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

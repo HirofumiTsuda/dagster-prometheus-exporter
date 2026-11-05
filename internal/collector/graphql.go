@@ -911,3 +911,57 @@ func getBackfills(ctx context.Context, request *GraphQLRequest, client dagsterCl
 
 	return &resp, nil
 }
+
+// GraphQLAssetMetadataResponse is the shape of the latest materialization of
+// the assets asked for. metadataEntries is a union of one type per kind of
+// value, and an entry of a kind not selected (text, URL, a boolean) decodes
+// with only its label.
+//
+// An integer is read from intRepr, not intValue: intValue is a 32-bit GraphQL
+// Int, and Dagster returns null for a value past it, which would drop a row
+// count above 2.1 billion without a trace. floatValue is null for NaN and
+// infinity, which JSON cannot carry, hence the pointer.
+//
+// timestamp is milliseconds since the epoch, as a string.
+type GraphQLAssetMetadataResponse struct {
+	Data struct {
+		AssetNodes []struct {
+			AssetKey struct {
+				Path AssetKeyPath `json:"path"`
+			} `json:"assetKey"`
+			IsPartitioned         bool `json:"isPartitioned"`
+			AssetMaterializations []struct {
+				Timestamp       string `json:"timestamp"`
+				MetadataEntries []struct {
+					Label      string   `json:"label"`
+					IntRepr    string   `json:"intRepr"`
+					FloatValue *float64 `json:"floatValue"`
+				} `json:"metadataEntries"`
+			} `json:"assetMaterializations"`
+		} `json:"assetNodes"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_asset_metadata.graphql
+var assetMetadataQuery string
+
+func getAssetMetadataRequest(assetKeys []AssetKeyPath) *GraphQLRequest {
+	keys := make([]map[string]interface{}, len(assetKeys))
+	for i, path := range assetKeys {
+		keys[i] = map[string]interface{}{"path": path}
+	}
+	return &GraphQLRequest{
+		Query:     assetMetadataQuery,
+		Variables: map[string]interface{}{"assetKeys": keys},
+	}
+}
+
+func getAssetMetadata(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLAssetMetadataResponse, error) {
+	var resp GraphQLAssetMetadataResponse
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}

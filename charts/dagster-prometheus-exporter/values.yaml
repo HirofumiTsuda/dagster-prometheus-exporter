@@ -45,6 +45,14 @@ env: {}
   # Job tags to export as tag_<key> labels on dagster_job_tags:
   # JOB_TAG_LABELS: "owner"
 
+# Numeric asset metadata to export as dagster_asset_metadata_value: a map from
+# an asset key (path segments joined by "/") to the metadata labels to read.
+# The chart renders it as the JSON that ASSET_METADATA_VALUES takes, so there
+# is no JSON to write by hand. Unset, the exporter exports no asset metadata.
+assetMetadataValues: {}
+  # orders: [row_count, accuracy]
+  # dbt/customers: [row_count]
+
 # Dagster+ API token, read from a Secret you create yourself, e.g.
 #   kubectl create secret generic dagster-cloud-api-token --from-literal=token=<token>
 # and passed to the exporter as DAGSTER_CLOUD_API_TOKEN. Leave existingSecret

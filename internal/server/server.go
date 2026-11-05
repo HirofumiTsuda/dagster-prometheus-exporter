@@ -59,6 +59,7 @@ func RunServer(ctx context.Context, cfg *config.Config) error {
 	if cfg.AssetStaleStatusDisabled {
 		c.DisableAssetStaleStatus()
 	}
+	c.SetAssetMetadataValues(cfg.AssetMetadataValues)
 	if len(cfg.JobTagLabels) > 0 {
 		c.SetJobTagLabels(cfg.JobTagLabels)
 	}

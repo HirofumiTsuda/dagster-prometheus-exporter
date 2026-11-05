@@ -2,11 +2,13 @@ package config
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ var CollectorNames = []string{
 	"daemon_health",
 	"asset_status",
 	"asset_checks",
+	"asset_metadata",
 	"backfills",
 	"op_pool_concurrency",
 }
@@ -88,6 +91,11 @@ type Config struct {
 	// label it is exported as on dagster_job_tags. It is empty when the
 	// variable is unset, and dagster_job_tags then has no series.
 	JobTagLabels map[string]string
+	// AssetMetadataValues maps each asset key in ASSET_METADATA_VALUES to the
+	// numeric metadata labels exported for it on dagster_asset_metadata_value.
+	// It is empty when the variable is unset, and the asset_metadata
+	// collector then asks Dagster nothing.
+	AssetMetadataValues map[string][]string
 }
 
 // getEnvInt reads env var key as an int, returning def when it's unset, and
@@ -243,6 +251,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	assetMetadataValues, err := loadAssetMetadataValues()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                         port,
 		DagsterGraphQLEndpoint:       dagsterGraphQLEndpoint,
@@ -259,6 +272,7 @@ func Load() (*Config, error) {
 		AssetStaleStatusDisabled:     !assetStaleStatus,
 		GraphQLRootCAs:               graphQLRootCAs,
 		JobTagLabels:                 jobTagLabels,
+		AssetMetadataValues:          assetMetadataValues,
 	}, nil
 }
 
@@ -291,6 +305,45 @@ func loadJobTagLabels() (map[string]string, error) {
 		labels[key] = label
 	}
 	return labels, nil
+}
+
+// loadAssetMetadataValues reads ASSET_METADATA_VALUES, a JSON object from an
+// asset key to the metadata labels to export for it:
+//
+//	{"orders": ["row_count", "accuracy"], "dbt/customers": ["row_count"]}
+//
+// It is JSON rather than a flat list so that several labels of one asset sit
+// together, and so no character in an asset key or a label can collide with a
+// separator. A key is the path segments joined by "/", as in the asset_key
+// label. Anything malformed is rejected at startup: a typo that silently
+// exported nothing would look like an asset with no data.
+func loadAssetMetadataValues() (map[string][]string, error) {
+	raw := strings.TrimSpace(os.Getenv("ASSET_METADATA_VALUES"))
+	if raw == "" {
+		return nil, nil
+	}
+
+	var parsed map[string][]string
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("invalid ASSET_METADATA_VALUES value: want a JSON object from an asset key to a list of metadata labels: %w", err)
+	}
+
+	values := make(map[string][]string, len(parsed))
+	for assetKey, labels := range parsed {
+		if slices.Contains(strings.Split(assetKey, "/"), "") {
+			return nil, fmt.Errorf("invalid ASSET_METADATA_VALUES value: asset key %q has an empty path segment", assetKey)
+		}
+		if len(labels) == 0 {
+			return nil, fmt.Errorf("invalid ASSET_METADATA_VALUES value: asset %q lists no metadata label", assetKey)
+		}
+		for _, label := range labels {
+			if label == "" {
+				return nil, fmt.Errorf("invalid ASSET_METADATA_VALUES value: asset %q lists an empty metadata label", assetKey)
+			}
+		}
+		values[assetKey] = slices.Compact(slices.Sorted(slices.Values(labels)))
+	}
+	return values, nil
 }
 
 // loadGraphQLRootCAs builds the trust pool for DAGSTER_GRAPHQL_CA_FILE, a PEM
