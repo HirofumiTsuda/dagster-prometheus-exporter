@@ -813,3 +813,52 @@ func GetVersion(ctx context.Context, request *GraphQLRequest, dagsterGraphQLEndp
 
 	return &resp, nil
 }
+
+// GraphQLAssetChecksResponse is the shape of assetNodes with each asset's
+// checks. assetChecksOrError is a union, so an asset whose checks cannot be
+// read (a code location that needs an upgrade, say) comes back with another
+// __typename and no checks, which is not the same as an asset with none.
+//
+// executionForLatestMaterialization is null until a check has run for the
+// asset's latest materialization, and evaluation is null when the check could
+// not run (EXECUTION_FAILED), hence the pointers.
+type GraphQLAssetChecksResponse struct {
+	Data struct {
+		AssetNodes []struct {
+			AssetKey struct {
+				Path AssetKeyPath `json:"path"`
+			} `json:"assetKey"`
+			AssetChecksOrError struct {
+				Typename string `json:"__typename"`
+				Checks   []struct {
+					Name                              string `json:"name"`
+					ExecutionForLatestMaterialization *struct {
+						Status     string `json:"status"`
+						Evaluation *struct {
+							Severity string `json:"severity"`
+						} `json:"evaluation"`
+					} `json:"executionForLatestMaterialization"`
+				} `json:"checks"`
+			} `json:"assetChecksOrError"`
+		} `json:"assetNodes"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_asset_checks.graphql
+var assetChecksQuery string
+
+func getAssetChecksRequest() *GraphQLRequest {
+	return &GraphQLRequest{
+		Query: assetChecksQuery,
+	}
+}
+
+func getAssetChecks(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLAssetChecksResponse, error) {
+	var resp GraphQLAssetChecksResponse
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}

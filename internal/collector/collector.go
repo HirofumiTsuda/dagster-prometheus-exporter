@@ -37,6 +37,7 @@ type DagsterCollector struct {
 	assetStaleStatusDesc                  *prometheus.Desc
 	assetLastMaterializationStatusDesc    *prometheus.Desc
 	assetLastMaterializationTimestampDesc *prometheus.Desc
+	assetCheckStatusDesc                  *prometheus.Desc
 	opPoolActiveSlotsDesc                 *prometheus.Desc
 	opPoolAssignedStepsDesc               *prometheus.Desc
 	opPoolPendingStepsDesc                *prometheus.Desc
@@ -71,6 +72,7 @@ type DagsterCollector struct {
 	daemonHealth            map[string]daemonHealthEntry
 	agents                  *agentsSummary
 	assetStatus             map[string]assetStatusEntry
+	assetChecks             []assetCheckEntry
 	opPoolConcurrency       map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
 	// jobTags holds each job's values for those keys, in the same order.
@@ -265,6 +267,12 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"asset_key"},
 			nil,
 		),
+		assetCheckStatusDesc: prometheus.NewDesc(
+			"dagster_asset_check_status",
+			"Outcome of an asset check's latest execution for the asset's latest materialization (value is always 1; status is one of succeeded/failed/execution_failed/in_progress/skipped, severity one of error/warn, empty when the check could not run). failed means the check ran and the data is bad; execution_failed means it could not run. Absent for a check that has not run yet",
+			[]string{"asset_key", "check_name", "status", "severity"},
+			nil,
+		),
 		opPoolActiveSlotsDesc: prometheus.NewDesc(
 			"dagster_op_pool_concurrency_active_slots",
 			"Number of slots currently claimed (steps actively running) against an op/step concurrency pool, per pool",
@@ -347,6 +355,7 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.assetStaleStatusDesc
 	ch <- c.assetLastMaterializationStatusDesc
 	ch <- c.assetLastMaterializationTimestampDesc
+	ch <- c.assetCheckStatusDesc
 	ch <- c.opPoolActiveSlotsDesc
 	ch <- c.opPoolAssignedStepsDesc
 	ch <- c.opPoolPendingStepsDesc
@@ -370,6 +379,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectDaemonHealth(c, ch)
 	reflectAgents(c, ch)
 	reflectAssetStatus(c, ch)
+	reflectAssetChecks(c, ch)
 	reflectOpPoolConcurrency(c, ch)
 	reflectJobTags(c, ch)
 	reflectJobAutomation(c, ch)

@@ -1,0 +1,21 @@
+query GetAssetChecks {
+  assetNodes {
+    assetKey {
+      path
+    }
+    assetChecksOrError {
+      __typename
+      ... on AssetChecks {
+        checks {
+          name
+          executionForLatestMaterialization {
+            status
+            evaluation {
+              severity
+            }
+          }
+        }
+      }
+    }
+  }
+}

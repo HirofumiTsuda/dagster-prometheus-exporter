@@ -23,6 +23,7 @@ var collectFuncs = map[string]collectFunc{
 	"code_location_status": collector.CollectCodeLocationStatus,
 	"daemon_health":        collector.CollectDaemonHealth,
 	"asset_status":         collector.CollectAssetStatus,
+	"asset_checks":         collector.CollectAssetChecks,
 	"op_pool_concurrency":  collector.CollectOpPoolConcurrency,
 	"agents":               collector.CollectAgents,
 }
