@@ -2,7 +2,7 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.14
+version: 0.1.15
 # Must exactly match a real tag on ghcr.io/hirofumitsuda/dagster-prometheus-exporter
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
@@ -36,6 +36,6 @@ annotations:
       url: https://raw.githubusercontent.com/HirofumiTsuda/dagster-prometheus-exporter/main/docs/images/grafana-dashboard.png
   artifacthub.io/changes: |
     - kind: changed
-      description: "appVersion 0.9.0 to 0.10.0: a failed run that Dagster will retry no longer becomes a job's last run, so the jobLastRunFailed alert stops firing on attempts a retry fixes; the last-run series survive an exporter restart; new dagster_last_run_end_timestamp_seconds, dagster_last_success_timestamp_seconds and dagster_job_automation_running metrics; a Dagster+ only agents collector (dagster_agents, dagster_agent_last_heartbeat_timestamp_seconds) that runs when DAGSTER_CLOUD_API_TOKEN is set. See the v0.10.0 release notes."
-    - kind: security
-      description: "The default image is now signed with cosign, ships SBOM and provenance attestations, and is scanned with Trivy before it is signed."
+      description: "jobLastRunFailed no longer fires forever for a job nobody runs any more: it keeps firing until the job succeeds only while a schedule or sensor still launches it (dagster_job_automation_running == 1), and for 24 hours after the failure otherwise. A failed job that no schedule or sensor launches now stops alerting 24 hours after its failure. Needs exporter 0.10.0 or newer, the chart's default image."
+    - kind: added
+      description: "jobNoRecentSuccess (DagsterJobNoRecentSuccess): an automated job that has not finished a successful run in 26 hours. Ships disabled, since jobs run at different cadences; set the threshold in alerts.rules.jobNoRecentSuccess.expr before enabling it."

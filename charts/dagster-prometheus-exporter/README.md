@@ -8,7 +8,7 @@ The chart is published as an OCI artifact to GHCR:
 
 ```sh
 helm install my-dagster-exporter oci://ghcr.io/hirofumitsuda/charts/dagster-prometheus-exporter \
-  --version 0.1.14 \
+  --version 0.1.15 \
   --set env.DAGSTER_GRAPHQL_ENDPOINT=http://dagster-webserver.dagster.svc.cluster.local/graphql
 ```
 
@@ -91,7 +91,7 @@ Off by default. When enabled, ships fifteen alerts covering daemon liveness, job
 
 Two of the fifteen ship **disabled**, because no single threshold fits every installation. `assetMaterializationStale`: unlike sensors (one fixed tick interval), assets in the same cluster can materialize on wildly different cadences. `jobNoRecentSuccess` ("an automated job hasn't succeeded in 26h"): jobs run hourly, daily or weekly. Set `expr`'s threshold to match your own assets or jobs before enabling them; for jobs, a cadence tag exported through `JOB_TAG_LABELS` lets one rule per cadence select its jobs.
 
-`jobLastRunFailed` fires while a job's last attempt has failed (a failed attempt that Dagster retries doesn't count). It keeps firing until the job succeeds as long as a schedule or sensor still launches the job, and for 24 hours after the failure otherwise, so a job nobody runs any more doesn't alert forever.
+`jobLastRunFailed` fires while a job's last attempt has failed (a failed attempt that Dagster retries doesn't count). It keeps firing until the job succeeds as long as a schedule or sensor still launches the job, and for 24 hours after the failure otherwise, so a job nobody runs any more doesn't alert forever. It reads `dagster_job_automation_running` and `dagster_last_run_end_timestamp_seconds`, which exporter 0.10.0 introduced, so it needs that version or newer (the chart's default image). With an older `image.tag` those series are missing and the alert never fires.
 
 One job needs care: asset runs started by declarative automation all run in the shared `__ASSET_JOB`, which counts as automated only while `default_automation_condition_sensor` (or another sensor that targets it) is turned on. With that sensor off, the OSS default, a failed `__ASSET_JOB` run alerts for 24 hours like a manual job, and `jobNoRecentSuccess` leaves it out. For asset runs, `assetMaterializationFailed` and `assetMaterializationStale` alert per asset regardless of the sensor.
 
