@@ -25,6 +25,7 @@ var CollectorNames = []string{
 	"daemon_health",
 	"asset_status",
 	"asset_checks",
+	"backfills",
 	"op_pool_concurrency",
 }
 

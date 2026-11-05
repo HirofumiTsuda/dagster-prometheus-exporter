@@ -1,0 +1,25 @@
+query GetBackfills($limit: Int!) {
+  recent: partitionBackfillsOrError(limit: $limit) {
+    ...BackfillsResult
+  }
+  active: partitionBackfillsOrError(
+    limit: $limit
+    filters: { statuses: [REQUESTED, CANCELING] }
+  ) {
+    ...BackfillsResult
+  }
+}
+
+fragment BackfillsResult on PartitionBackfillsOrError {
+  __typename
+  ... on PartitionBackfills {
+    results {
+      status
+      timestamp
+    }
+  }
+  ... on PythonError {
+    message
+    stack
+  }
+}

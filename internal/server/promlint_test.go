@@ -47,6 +47,8 @@ func fakeDagster(t *testing.T) *httptest.Server {
 			out = `{"data":{"instance":{"concurrencyLimits":[{"concurrencyKey":"pool_a","activeSlotCount":1,"assignedStepCount":0,"pendingStepCount":2,"limit":2,"usingDefaultLimit":false}]}}}`
 		case strings.Contains(query, "assetsLatestInfo"):
 			out = fmt.Sprintf(`{"data":{"assetsLatestInfo":[{"assetKey":{"path":["asset_a"]},"latestRun":{"status":"SUCCESS","endTime":%d}}]}}`, now)
+		case strings.Contains(query, "partitionBackfillsOrError"):
+			out = fmt.Sprintf(`{"data":{"recent":{"__typename":"PartitionBackfills","results":[{"status":"REQUESTED","timestamp":%d}]},"active":{"__typename":"PartitionBackfills","results":[{"status":"REQUESTED","timestamp":%d}]}}}`, now, now)
 		case strings.Contains(query, "assetChecksOrError"):
 			out = `{"data":{"assetNodes":[{"assetKey":{"path":["asset_a"]},"assetChecksOrError":{"__typename":"AssetChecks","checks":[{"name":"check_a","executionForLatestMaterialization":{"status":"FAILED","evaluation":{"severity":"WARN"}}}]}}]}}`
 		case strings.Contains(query, "assetNodes"):

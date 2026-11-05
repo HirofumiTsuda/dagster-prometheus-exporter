@@ -38,6 +38,8 @@ type DagsterCollector struct {
 	assetLastMaterializationStatusDesc    *prometheus.Desc
 	assetLastMaterializationTimestampDesc *prometheus.Desc
 	assetCheckStatusDesc                  *prometheus.Desc
+	backfillsDesc                         *prometheus.Desc
+	backfillOldestActiveDesc              *prometheus.Desc
 	opPoolActiveSlotsDesc                 *prometheus.Desc
 	opPoolAssignedStepsDesc               *prometheus.Desc
 	opPoolPendingStepsDesc                *prometheus.Desc
@@ -73,6 +75,7 @@ type DagsterCollector struct {
 	agents                  *agentsSummary
 	assetStatus             map[string]assetStatusEntry
 	assetChecks             []assetCheckEntry
+	backfills               *backfillsSummary
 	opPoolConcurrency       map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
 	// jobTags holds each job's values for those keys, in the same order.
@@ -273,6 +276,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"asset_key", "check_name", "status", "severity"},
 			nil,
 		),
+		backfillsDesc: prometheus.NewDesc(
+			"dagster_backfills",
+			"Number of backfills in each status among the most recent ones Dagster returns (status is the lowercased BulkActionStatus). Every known status is always present once the backfills have been read, so a status > 0 can alert. active means REQUESTED, CANCELING or FAILING; REQUESTED covers a backfill whose runs are executing",
+			[]string{"status"},
+			nil,
+		),
+		backfillOldestActiveDesc: prometheus.NewDesc(
+			"dagster_backfill_oldest_active_timestamp_seconds",
+			"Unix timestamp at which the oldest backfill that is still active (REQUESTED, CANCELING or FAILING) was created. Absent while no backfill is active. Exported as a timestamp rather than an age so it is computed at query time (time() - metric), not frozen at scrape time",
+			nil,
+			nil,
+		),
 		opPoolActiveSlotsDesc: prometheus.NewDesc(
 			"dagster_op_pool_concurrency_active_slots",
 			"Number of slots currently claimed (steps actively running) against an op/step concurrency pool, per pool",
@@ -356,6 +371,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.assetLastMaterializationStatusDesc
 	ch <- c.assetLastMaterializationTimestampDesc
 	ch <- c.assetCheckStatusDesc
+	ch <- c.backfillsDesc
+	ch <- c.backfillOldestActiveDesc
 	ch <- c.opPoolActiveSlotsDesc
 	ch <- c.opPoolAssignedStepsDesc
 	ch <- c.opPoolPendingStepsDesc
@@ -380,6 +397,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectAgents(c, ch)
 	reflectAssetStatus(c, ch)
 	reflectAssetChecks(c, ch)
+	reflectBackfills(c, ch)
 	reflectOpPoolConcurrency(c, ch)
 	reflectJobTags(c, ch)
 	reflectJobAutomation(c, ch)

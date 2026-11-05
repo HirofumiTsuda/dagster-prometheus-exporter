@@ -24,6 +24,7 @@ var collectFuncs = map[string]collectFunc{
 	"daemon_health":        collector.CollectDaemonHealth,
 	"asset_status":         collector.CollectAssetStatus,
 	"asset_checks":         collector.CollectAssetChecks,
+	"backfills":            collector.CollectBackfills,
 	"op_pool_concurrency":  collector.CollectOpPoolConcurrency,
 	"agents":               collector.CollectAgents,
 }

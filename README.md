@@ -139,10 +139,12 @@ Full label reference, edge cases, and design rationale for every metric below: [
 | `dagster_asset_last_materialization_status` | Gauge | Outcome of an asset's most recently launched materializing run — the only one of the two that shows a failed run, since staleness alone can't tell "failed" from "never run". |
 | `dagster_asset_last_materialization_timestamp_seconds` | Gauge | When an asset was last materialized, regardless of outcome — catches a leaf asset that's gone quiet, since stale status alone can't (it's a `code_version` comparison, not elapsed time). |
 | `dagster_asset_check_status` | Gauge | Outcome of an asset check's latest execution (`succeeded`, `failed`, `execution_failed`, ...) with its severity, so a check that fails while the run succeeds can alert. |
+| `dagster_backfills` | Gauge | Number of backfills in each status (`requested`, `completed_failed`, `canceling`, ...), among the newest ones. Every status is always present. |
+| `dagster_backfill_oldest_active_timestamp_seconds` | Gauge | When the oldest backfill that is still active was created. Absent while none is, so `time() - metric` finds a backfill that hangs. |
 
 ### Exporter self-health
 
-These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `op_pool_concurrency`, and `agents` on Dagster+ — see [docs/architecture.md](docs/architecture.md)).
+These report on the exporter itself rather than on Dagster's run state. The first three are labeled `collector` (one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `backfills`, `op_pool_concurrency`, and `agents` on Dagster+ — see [docs/architecture.md](docs/architecture.md)).
 
 | Metric | Type | Description |
 | --- | --- | --- |
