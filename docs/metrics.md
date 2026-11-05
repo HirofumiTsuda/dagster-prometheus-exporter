@@ -91,6 +91,8 @@ and on (job_name, location) dagster_job_automation_running == 1
 
 The links come from each schedule's job and each sensor's targets in the definitions roster, so a sensor's targets are only the jobs it declares. A sensor that launches runs of jobs it doesn't declare as targets doesn't mark them. Like `dagster_job_tags`, a job that drops out of the roster keeps its last value while its code location is failing to load, so the broken deploy doesn't drop it out of alerts scoped on this metric.
 
+Asset runs started by declarative automation (an asset with an `automation_condition`) all run in one shared job, `__ASSET_JOB`. Dagster's `default_automation_condition_sensor` targets it, so `__ASSET_JOB` reads `1` while that sensor, or another sensor that targets it, is turned on, and `0` otherwise. On open-source Dagster the sensor is off until you turn it on. With it off, a failed `__ASSET_JOB` run still shows in `dagster_last_run_info`, but an alert scoped on this metric leaves it out, and the chart's `jobLastRunFailed` stops alerting on it 24 hours after the failure. Because every asset run shares that one job, these job metrics cannot say which asset failed; for asset runs use `dagster_asset_last_materialization_status` and the asset alerts, which do not depend on the sensor.
+
 ## `dagster_job_tags` (Gauge)
 
 Labels: `job_name`, `location`, plus one `tag_<key>` per key in `JOB_TAG_LABELS`
