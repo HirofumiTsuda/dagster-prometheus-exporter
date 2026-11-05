@@ -13,9 +13,9 @@ The exporter is a single Go binary with no external state store — everything i
 
 Because scraping (writing state) and metrics rendering (reading state) are decoupled, a slow or failing Dagster GraphQL call never blocks or breaks a `/metrics` request — it just serves the last known state.
 
-## Why nine collectors, and why they're split the way they are
+## Why ten collectors, and why they're split the way they are
 
-The nine collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, asset checks, backfills, op pool concurrency) run concurrently on every scrape, joined by a tenth, `agents`, when `DAGSTER_CLOUD_API_TOKEN` is set (only Dagster+ has the field it reads) — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
+The ten collectors (definitions roster, active runs, completed runs, code-location load status, daemon health, asset status, asset checks, asset metadata, backfills, op pool concurrency) run concurrently on every scrape, joined by an eleventh, `agents`, when `DAGSTER_CLOUD_API_TOKEN` is set (only Dagster+ has the field it reads) — each locks `DagsterCollector`'s own mutex only around its own critical section, so they don't block each other or `/metrics`.
 
 The code-location load status collector is intentionally independent of the definitions-roster one: `repositoriesOrError` (used for the roster) silently omits a code location that fails to load rather than erroring out, so a separate `workspaceOrError` query is needed to detect that failure at all — see `dagster_code_location_load_error` in the [metrics reference](metrics.md).
 
@@ -26,6 +26,8 @@ The asset-status collector is a third independent one, and the only one that mak
 The asset-checks collector is split from asset status although both read `assetNodes`. A check result is a separate selection on every asset, whose cost on a large deployment has not been measured (`asset_status` is already slow there, see #140), so folding it into `asset_status` would make that collector heavier for everyone, and `ASSET_STATUS_SCRAPING_INTERVAL_SECONDS` could not slow the checks down on their own. It also keeps the metric free of `asset_status`' two-step dependency on `assetsLatestInfo`.
 
 The backfills collector reads `partitionBackfillsOrError`, a top-level field with no tie to runs or assets. It asks twice in one request: for the newest backfills of any status, and for the newest ones that are `REQUESTED` or `CANCELING` (not `FAILING`, which Dagster 1.9 lacks, so a query naming it is rejected there). A backfill that hangs is the case worth catching, and with only the first list it would fall out once enough newer backfills were launched.
+
+The asset-metadata collector asks for nothing until `ASSET_METADATA_VALUES` lists assets. It asks for those assets by key (`assetNodes(assetKeys: ...)`) instead of for every asset, because Dagster reads each asset's latest materialization separately: in a measurement of 1000 assets on a local instance, all of them took 0.3 to 0.5s and five listed ones 0.02s. It is a collector of its own so that a deployment that lists a few assets does not pay for `asset_status`' scan of all of them.
 
 `dagster_run_queue_concurrency_key_backlog` is folded into the active-runs collector instead of getting its own: it only needs `QUEUED` runs' tags, which that collector already fetches on every page, so a separate query would just re-fetch the same runs a second time for no reason.
 

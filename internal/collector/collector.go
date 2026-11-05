@@ -39,6 +39,8 @@ type DagsterCollector struct {
 	assetLastMaterializationTimestampDesc *prometheus.Desc
 	assetCheckStatusDesc                  *prometheus.Desc
 	backfillsDesc                         *prometheus.Desc
+	assetMetadataValueDesc                *prometheus.Desc
+	assetMetadataTimestampDesc            *prometheus.Desc
 	backfillOldestActiveDesc              *prometheus.Desc
 	opPoolActiveSlotsDesc                 *prometheus.Desc
 	opPoolAssignedStepsDesc               *prometheus.Desc
@@ -76,7 +78,11 @@ type DagsterCollector struct {
 	assetStatus             map[string]assetStatusEntry
 	assetChecks             []assetCheckEntry
 	backfills               *backfillsSummary
-	opPoolConcurrency       map[string]opPoolConcurrencyEntry
+	// assetMetadataValues is set by SetAssetMetadataValues and never changes
+	// after that. assetMetadata holds what the last scrape read.
+	assetMetadataValues map[string][]string
+	assetMetadata       []assetMetadataEntry
+	opPoolConcurrency   map[string]opPoolConcurrencyEntry
 	// jobTagKeys is set by SetJobTagLabels and never changes after that.
 	// jobTags holds each job's values for those keys, in the same order.
 	jobTagKeys    []string
@@ -276,6 +282,18 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 			[]string{"asset_key", "check_name", "status", "severity"},
 			nil,
 		),
+		assetMetadataValueDesc: prometheus.NewDesc(
+			"dagster_asset_metadata_value",
+			"A numeric metadata value (int or float) recorded on an asset's latest materialization, for the asset keys and labels listed in ASSET_METADATA_VALUES. Absent for an asset with no materialization, a partitioned asset, and a label the materialization lacks or records as something else (text, URL, NaN)",
+			[]string{"asset_key", "label"},
+			nil,
+		),
+		assetMetadataTimestampDesc: prometheus.NewDesc(
+			"dagster_asset_metadata_timestamp_seconds",
+			"Unix timestamp of the materialization the dagster_asset_metadata_value series of an asset were read from. Unlike the last-materialization timestamp, a failed run does not move it, so time() - metric is how long the values have been stale. Exported as a timestamp rather than an age so it is computed at query time, not frozen at scrape time",
+			[]string{"asset_key"},
+			nil,
+		),
 		backfillsDesc: prometheus.NewDesc(
 			"dagster_backfills",
 			"Number of backfills in each status among the most recent ones Dagster returns (status is the lowercased BulkActionStatus). Every known status is always present once the backfills have been read, so a status > 0 can alert. active means REQUESTED, CANCELING or FAILING; REQUESTED covers a backfill whose runs are executing",
@@ -372,6 +390,8 @@ func (c *DagsterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.assetLastMaterializationTimestampDesc
 	ch <- c.assetCheckStatusDesc
 	ch <- c.backfillsDesc
+	ch <- c.assetMetadataValueDesc
+	ch <- c.assetMetadataTimestampDesc
 	ch <- c.backfillOldestActiveDesc
 	ch <- c.opPoolActiveSlotsDesc
 	ch <- c.opPoolAssignedStepsDesc
@@ -398,6 +418,7 @@ func (c *DagsterCollector) Collect(ch chan<- prometheus.Metric) {
 	reflectAssetStatus(c, ch)
 	reflectAssetChecks(c, ch)
 	reflectBackfills(c, ch)
+	reflectAssetMetadata(c, ch)
 	reflectOpPoolConcurrency(c, ch)
 	reflectJobTags(c, ch)
 	reflectJobAutomation(c, ch)

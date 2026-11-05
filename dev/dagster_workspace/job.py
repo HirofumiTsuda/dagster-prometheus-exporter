@@ -4,6 +4,7 @@ from dagster import (
     AssetCheckResult,
     DefaultScheduleStatus,
     DefaultSensorStatus,
+    MaterializeResult,
     ScheduleDefinition,
     SensorEvaluationContext,
     SkipReason,
@@ -138,8 +139,9 @@ sensors = [quick_job_sensor, failing_sensor]
 def good_asset():
     """An asset that materializes successfully every time, for exercising
     dagster_asset_last_materialization_status{status="success"} and
-    dagster_asset_stale_status."""
-    return 1
+    dagster_asset_stale_status. It records row_count, for
+    dagster_asset_metadata_value."""
+    return MaterializeResult(metadata={"row_count": 3})
 
 
 @asset

@@ -1,0 +1,20 @@
+query GetAssetMetadata($assetKeys: [AssetKeyInput!]!) {
+  assetNodes(assetKeys: $assetKeys) {
+    assetKey {
+      path
+    }
+    isPartitioned
+    assetMaterializations(limit: 1) {
+      timestamp
+      metadataEntries {
+        label
+        ... on IntMetadataEntry {
+          intRepr
+        }
+        ... on FloatMetadataEntry {
+          floatValue
+        }
+      }
+    }
+  }
+}

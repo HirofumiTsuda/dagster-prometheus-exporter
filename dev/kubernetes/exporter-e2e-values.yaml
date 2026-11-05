@@ -11,3 +11,9 @@ env:
   # The fixture jobs' existing tag (dev/dagster_workspace/job.py), so
   # dagster_job_tags has series, and its "/" shows the label-name sanitizing.
   JOB_TAG_LABELS: dagster/concurrency_key
+
+# The fixture's good_asset records row_count (dev/dagster_workspace/job.py), so
+# dagster_asset_metadata_value has a series. Set through the chart value, which
+# renders the JSON the variable takes.
+assetMetadataValues:
+  good_asset: [row_count]
