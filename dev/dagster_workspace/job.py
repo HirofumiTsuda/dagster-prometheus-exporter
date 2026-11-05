@@ -1,12 +1,14 @@
 import time
 
 from dagster import (
+    AssetCheckResult,
     DefaultScheduleStatus,
     DefaultSensorStatus,
     ScheduleDefinition,
     SensorEvaluationContext,
     SkipReason,
     asset,
+    asset_check,
     job,
     multiprocess_executor,
     op,
@@ -153,4 +155,19 @@ def bad_asset():
     )
 
 
+@asset_check(asset=good_asset)
+def good_asset_not_empty():
+    """A check that passes, for exercising dagster_asset_check_status. It runs
+    with good_asset, so the e2e launch that materializes the asset produces it."""
+    return AssetCheckResult(passed=True)
+
+
+@asset_check(asset=good_asset)
+def good_asset_no_nulls():
+    """A check that fails while its run succeeds, which is what
+    dagster_asset_check_status exists to show."""
+    return AssetCheckResult(passed=False)
+
+
 assets = [good_asset, bad_asset]
+asset_checks = [good_asset_not_empty, good_asset_no_nulls]
