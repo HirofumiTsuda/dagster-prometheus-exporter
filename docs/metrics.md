@@ -301,6 +301,39 @@ An asset whose checks cannot be read (`assetChecksOrError` answers with an error
 
 This is the `asset_checks` collector, separate from `asset_status` so it can be given its own `ASSET_CHECKS_SCRAPING_INTERVAL_SECONDS`. Verified against open-source Dagster 1.13.25 with one passing check, one failing, one failing with `AssetCheckSeverity.WARN`, one that raised, and one that never ran.
 
+## `dagster_backfills` (Gauge)
+
+Labels: `status`
+
+The number of backfills in each status, among the newest 100 (`partitionBackfillsOrError`). All eight statuses are always present once the backfills have been read, so `dagster_backfills{status="completed_failed"} > 0` can alert without the series having to appear first.
+
+| `status` | Meaning |
+| --- | --- |
+| `requested` | Active. Dagster has no separate "running" status: a backfill whose runs are executing stays `requested`. |
+| `canceling` | Active. A cancel was asked for, and the backfill is still stopping its runs. About 30 seconds in a test. |
+| `failing` | Active. Read from the newest 100 only, because Dagster 1.9 has no such status and a query that names it is rejected there. |
+| `completed_success` | Finished, all partitions succeeded. |
+| `completed_failed` | Finished, at least one partition failed. |
+| `completed` | Finished. |
+| `failed` | The backfill itself failed. |
+| `canceled` | Finished, canceled. |
+
+`failed` and `completed_failed` are different statuses and are not merged. This exporter has seen `completed_failed` for a backfill whose partitions all failed, but has not seen when Dagster uses `failed`, so alert on both: `dagster_backfills{status=~"failed|completed_failed"} > 0`.
+
+The backfill id is not a label, because it would add a series for every backfill ever launched. The count covers the newest 100 backfills, so a finished backfill drops out once 100 newer ones exist. `requested` and `canceling` are counted from a separate list that asks Dagster only for those, so an old backfill that hangs is still counted however many newer ones were launched.
+
+Verified against open-source Dagster 1.13.25 with a backfill that succeeded, one whose partitions all failed, one that was canceled (`requested`, then `canceling`, then `canceled`), and one still running.
+
+## `dagster_backfill_oldest_active_timestamp_seconds` (Gauge)
+
+Unix timestamp at which the oldest active backfill (`requested`, `canceling` or `failing`) was created. No series while none is active. Exported as a timestamp so the age is computed at query time:
+
+```promql
+time() - dagster_backfill_oldest_active_timestamp_seconds > 6 * 3600
+```
+
+That alerts on a backfill that has been active for six hours. How long a backfill should take depends on the deployment, so no default alert ships with the chart.
+
 ## `dagster_op_pool_concurrency_active_slots` (Gauge)
 
 Labels: `pool`
@@ -341,7 +374,7 @@ Absent for a pool Dagster reports no limit for at all — the schema makes `limi
 
 ## Exporter self-health
 
-These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, or `op_pool_concurrency` (the eight collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
+These report on the exporter itself, rather than on Dagster's run state. The first three are about whether its own scrapes of Dagster are succeeding, and are labeled `collector`, one of `definitions_roster`, `active_runs`, `completed_runs`, `code_location_status`, `daemon_health`, `asset_status`, `asset_checks`, `backfills`, or `op_pool_concurrency` (the nine collectors described in [docs/architecture.md](architecture.md)), plus `agents` when `DAGSTER_CLOUD_API_TOKEN` is set. Each collector scrapes on its own schedule, so with `<COLLECTOR>_SCRAPING_INTERVAL_SECONDS` overrides set, these series are refreshed at different rates: a collector's value only changes once per its own interval, and `last_scrape_success` of a slow collector can stay `0` for up to that long after Dagster recovers.
 
 ### `dagster_exporter_scrape_duration_seconds` (Gauge)
 

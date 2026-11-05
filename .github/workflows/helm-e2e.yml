@@ -86,10 +86,16 @@ jobs:
           # The agents families only exist on Dagster+: the collector is not
           # started without DAGSTER_CLOUD_API_TOKEN, and this job runs against
           # open-source Dagster. Their absence is asserted below instead.
+          #
+          # dagster_backfill_oldest_active_timestamp_seconds only exists while
+          # a backfill is active, and one that finishes between two scrapes
+          # would make this assertion flaky. dagster_backfills, which is
+          # always present, proves the collector runs.
           cat > /tmp/not-yet-asserted.txt <<'NAMES'
           dagster_exporter_scrape_errors_total
           dagster_agents
           dagster_agent_last_heartbeat_timestamp_seconds
+          dagster_backfill_oldest_active_timestamp_seconds
           NAMES
           grep -vFxf /tmp/not-yet-asserted.txt /tmp/expected-metrics.txt > /tmp/expected-metrics-asserted.txt
           echo "--- asserted this run ($(wc -l < /tmp/expected-metrics-asserted.txt) of $(wc -l < /tmp/expected-metrics.txt)) ---"

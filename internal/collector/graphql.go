@@ -862,3 +862,52 @@ func getAssetChecks(ctx context.Context, request *GraphQLRequest, client dagster
 
 	return &resp, nil
 }
+
+// backfillsResult is one partitionBackfillsOrError answer, newest backfill
+// first. timestamp is when the backfill was created.
+type backfillsResult struct {
+	Typename string `json:"__typename"`
+	Results  []struct {
+		Status    string  `json:"status"`
+		Timestamp float64 `json:"timestamp"`
+	} `json:"results"`
+	Message string   `json:"message"`
+	Stack   []string `json:"stack"`
+}
+
+// GraphQLBackfillsResponse holds the newest backfills of any status, and the
+// newest ones that are still active, which are asked for separately so that a
+// backfill that hangs does not fall out of the first list once newer ones are
+// launched.
+type GraphQLBackfillsResponse struct {
+	Data struct {
+		Recent backfillsResult `json:"recent"`
+		Active backfillsResult `json:"active"`
+	} `json:"data"`
+	graphQLErrors
+}
+
+//go:embed queries/get_backfills.graphql
+var backfillsQuery string
+
+func getBackfillsRequest(limit int) *GraphQLRequest {
+	return &GraphQLRequest{
+		Query:     backfillsQuery,
+		Variables: map[string]interface{}{"limit": limit},
+	}
+}
+
+func getBackfills(ctx context.Context, request *GraphQLRequest, client dagsterClient) (*GraphQLBackfillsResponse, error) {
+	var resp GraphQLBackfillsResponse
+	if err := doGraphQL(ctx, request, client, &resp); err != nil {
+		return nil, err
+	}
+
+	for field, result := range map[string]backfillsResult{"recent": resp.Data.Recent, "active": resp.Data.Active} {
+		if result.Typename != "PartitionBackfills" {
+			return nil, unexpectedUnionMember("partitionBackfillsOrError ("+field+")", "PartitionBackfills", result.Typename, result.Message, result.Stack)
+		}
+	}
+
+	return &resp, nil
+}
