@@ -922,16 +922,19 @@ func getBackfills(ctx context.Context, request *GraphQLRequest, client dagsterCl
 // count above 2.1 billion without a trace. floatValue is null for NaN and
 // infinity, which JSON cannot carry, hence the pointer.
 //
-// timestamp is milliseconds since the epoch, as a string.
+// timestamp is milliseconds since the epoch, as a string. partition is the
+// key of the partition the event is for, "2026-01-02|eu" for a multi-partition
+// asset.
 type GraphQLAssetMetadataResponse struct {
 	Data struct {
 		AssetNodes []struct {
 			AssetKey struct {
 				Path AssetKeyPath `json:"path"`
 			} `json:"assetKey"`
-			IsPartitioned         bool `json:"isPartitioned"`
 			AssetMaterializations []struct {
-				Timestamp       string `json:"timestamp"`
+				Timestamp string `json:"timestamp"`
+				// Partition is null for an asset that is not partitioned.
+				Partition       *string `json:"partition"`
 				MetadataEntries []struct {
 					Label      string   `json:"label"`
 					IntRepr    string   `json:"intRepr"`

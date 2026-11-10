@@ -303,7 +303,7 @@ This is the `asset_checks` collector, separate from `asset_status` so it can be 
 
 ## `dagster_asset_metadata_value` (Gauge)
 
-Labels: `asset_key`, `label`
+Labels: `asset_key`, `partition`, `label`
 
 A numeric value (`int` or `float`) that an asset recorded on its latest materialization with `add_output_metadata` or `MaterializeResult(metadata=...)`: a row count, a file size, an accuracy score. A run can succeed while the data is wrong, such as a table with 0 rows, and this is what makes that alertable:
 
@@ -333,22 +333,33 @@ std.manifestJsonMinified({ orders: ['row_count', 'accuracy'], 'dbt/customers': [
 
 An asset key with a `/` inside a segment cannot be written this way. A malformed value, an empty list or an empty label stops the exporter at startup, so a typo does not silently export nothing.
 
+## Partitioned assets
+
+For a partitioned asset the series is the latest materialization, which is **the partition that was materialized last**, not the newest partition key. Its key is in the `partition` label (`2026-01-02` for a daily partition, `eu` for a static one, `2026-01-02|eu` for a multi-partition asset). An asset that is not partitioned has an empty `partition`.
+
+Only that one partition is read, so an asset has one series per label however many partitions it has. When another partition is materialized the series is replaced, not added to, and the old `partition` value goes with it. **Re-running an old partition moves the series back to it**, so a backfill of last month leaves the series on the last partition the backfill finished, until the next daily run.
+
+```promql
+dagster_asset_metadata_value{asset_key="orders", label="row_count"} == 0
+```
+
+The query above still works, as it does not name `partition`. Because the label changes with each partition, a graph of the value over time shows one line per partition that was ever the latest, and an alert should not match on `partition`.
+
 ## What is skipped
 
 - **Text, URL, boolean and other kinds of entry.** Only `int` and `float` become series.
 - **NaN and infinity.** Dagster answers `null` for them, as JSON cannot carry them.
-- **A partitioned asset.** Its latest materialization is whichever partition ran last, so the value would jump between partitions as they run. One series per partition would be the cardinality problem the allow list avoids.
 - **An asset with no materialization, an asset Dagster does not define, and a label the materialization lacks.** No series, the same way `dagster_asset_last_materialization_status` handles an asset that never ran.
 
 An integer is read as a string and converted to a float64, so a count above 2^53 loses its last digits. Dagster returns `null` for an integer past 32 bits in the field it offers for numbers, which is why the exporter does not use that field: a row count above 2.1 billion would be dropped without a trace.
 
 ## `dagster_asset_metadata_timestamp_seconds` (Gauge)
 
-Labels: `asset_key`
+Labels: `asset_key`, `partition`
 
 Unix timestamp of the materialization the values of that asset were read from. A run that fails after a success leaves the last successful materialization in place, so the value stays and this timestamp stays with it. `time() - dagster_asset_metadata_timestamp_seconds` is how long the values have been stale, which `dagster_asset_last_materialization_timestamp_seconds` cannot say: that one is the end time of the latest run and moves on a failed run too.
 
-Verified against open-source Dagster 1.13.25 with an asset recording an int, a float, text, a URL, a boolean and NaN, an int of 5 billion, a partitioned asset, an asset that never ran, and an asset whose latest run failed after a success. Not checked: the metadata that dbt and other integrations record, and the cost on Dagster+.
+Verified against open-source Dagster 1.13.25 with an asset recording an int, a float, text, a URL, a boolean and NaN, an int of 5 billion, a daily, a static and a multi-partition asset (a new partition replaced the series, and a re-run of an old one moved it back), an asset that never ran, and an asset whose latest run failed after a success. Not checked: the metadata that dbt and other integrations record, and the cost on Dagster+.
 
 ## `dagster_backfills` (Gauge)
 

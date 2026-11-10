@@ -284,14 +284,14 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		),
 		assetMetadataValueDesc: prometheus.NewDesc(
 			"dagster_asset_metadata_value",
-			"A numeric metadata value (int or float) recorded on an asset's latest materialization, for the asset keys and labels listed in ASSET_METADATA_VALUES. Absent for an asset with no materialization, a partitioned asset, and a label the materialization lacks or records as something else (text, URL, NaN)",
-			[]string{"asset_key", "label"},
+			"A numeric metadata value (int or float) recorded on an asset's latest materialization, for the asset keys and labels listed in ASSET_METADATA_VALUES. partition is the key of the partition materialized last, and empty for an asset that is not partitioned; re-running an old partition moves the series to it. Absent for an asset with no materialization, and a label the materialization lacks or records as something else (text, URL, NaN)",
+			[]string{"asset_key", "partition", "label"},
 			nil,
 		),
 		assetMetadataTimestampDesc: prometheus.NewDesc(
 			"dagster_asset_metadata_timestamp_seconds",
 			"Unix timestamp of the materialization the dagster_asset_metadata_value series of an asset were read from. Unlike the last-materialization timestamp, a failed run does not move it, so time() - metric is how long the values have been stale. Exported as a timestamp rather than an age so it is computed at query time, not frozen at scrape time",
-			[]string{"asset_key"},
+			[]string{"asset_key", "partition"},
 			nil,
 		),
 		backfillsDesc: prometheus.NewDesc(
