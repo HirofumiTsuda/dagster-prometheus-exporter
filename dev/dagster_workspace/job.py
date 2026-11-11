@@ -194,7 +194,9 @@ def regional_table(context: AssetExecutionContext):
     return MaterializeResult(metadata={"row_count": 100 if context.partition_key == "eu" else 200})
 
 
-@asset(partitions_def=MultiPartitionsDefinition({"day": daily_partitions, "region": region_partitions}))
+@asset(
+    partitions_def=MultiPartitionsDefinition({"day": daily_partitions, "region": region_partitions})
+)
 def regional_daily_table(context: AssetExecutionContext):
     """The same, for a multi-partition asset, whose key is "2026-01-02|eu"."""
     return MaterializeResult(metadata={"row_count": 1})
