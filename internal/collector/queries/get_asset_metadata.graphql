@@ -3,9 +3,9 @@ query GetAssetMetadata($assetKeys: [AssetKeyInput!]!) {
     assetKey {
       path
     }
-    isPartitioned
     assetMaterializations(limit: 1) {
       timestamp
+      partition
       metadataEntries {
         label
         ... on IntMetadataEntry {

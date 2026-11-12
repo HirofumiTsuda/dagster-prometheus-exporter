@@ -15,6 +15,9 @@ import (
 // materialization.
 type assetMetadataEntry struct {
 	assetKey string
+	// partition is the partition the materialization was for, empty when the
+	// asset is not partitioned.
+	partition string
 	// timestamp is when the materialization happened, in seconds.
 	timestamp float64
 	values    map[string]float64
@@ -36,10 +39,11 @@ func (c *DagsterCollector) SetAssetMetadataValues(values map[string][]string) {
 // them would cost in proportion to the number of assets, and exporting every
 // label of every asset would grow the series count without a bound.
 //
-// A partitioned asset is skipped. Its latest materialization is whichever
-// partition ran last, so the value would jump between partitions as they run,
-// and one series per partition is the cardinality problem the allow list is
-// there to avoid.
+// For a partitioned asset the latest materialization is whichever partition
+// ran last, and its key goes in the partition label. Only that one is read, so
+// an asset has one series per label however many partitions it has: when
+// another partition runs, the series is replaced rather than added to. That
+// includes a re-run of an old partition, which moves it back.
 func CollectAssetMetadata(ctx context.Context, c *DagsterCollector) error {
 	if len(c.assetMetadataValues) == 0 {
 		return nil
@@ -59,7 +63,7 @@ func CollectAssetMetadata(ctx context.Context, c *DagsterCollector) error {
 	var entries []assetMetadataEntry
 	for _, node := range resp.Data.AssetNodes {
 		assetKey := assetKeyLabel(node.AssetKey.Path)
-		if node.IsPartitioned || len(node.AssetMaterializations) == 0 {
+		if len(node.AssetMaterializations) == 0 {
 			continue
 		}
 		materialization := node.AssetMaterializations[0]
@@ -83,7 +87,11 @@ func CollectAssetMetadata(ctx context.Context, c *DagsterCollector) error {
 		if len(values) == 0 {
 			continue
 		}
-		entries = append(entries, assetMetadataEntry{assetKey: assetKey, timestamp: timestampMillis / 1000, values: values})
+		var partition string
+		if materialization.Partition != nil {
+			partition = *materialization.Partition
+		}
+		entries = append(entries, assetMetadataEntry{assetKey: assetKey, partition: partition, timestamp: timestampMillis / 1000, values: values})
 	}
 
 	c.mutex.Lock()
@@ -99,9 +107,9 @@ func reflectAssetMetadata(c *DagsterCollector, ch chan<- prometheus.Metric) {
 	defer c.mutex.Unlock()
 
 	for _, entry := range c.assetMetadata {
-		ch <- prometheus.MustNewConstMetric(c.assetMetadataTimestampDesc, prometheus.GaugeValue, entry.timestamp, entry.assetKey)
+		ch <- prometheus.MustNewConstMetric(c.assetMetadataTimestampDesc, prometheus.GaugeValue, entry.timestamp, entry.assetKey, entry.partition)
 		for label, value := range entry.values {
-			ch <- prometheus.MustNewConstMetric(c.assetMetadataValueDesc, prometheus.GaugeValue, value, entry.assetKey, label)
+			ch <- prometheus.MustNewConstMetric(c.assetMetadataValueDesc, prometheus.GaugeValue, value, entry.assetKey, entry.partition, label)
 		}
 	}
 }

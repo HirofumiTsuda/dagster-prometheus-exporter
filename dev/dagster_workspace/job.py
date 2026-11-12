@@ -2,12 +2,16 @@ import time
 
 from dagster import (
     AssetCheckResult,
+    AssetExecutionContext,
+    DailyPartitionsDefinition,
     DefaultScheduleStatus,
     DefaultSensorStatus,
     MaterializeResult,
+    MultiPartitionsDefinition,
     ScheduleDefinition,
     SensorEvaluationContext,
     SkipReason,
+    StaticPartitionsDefinition,
     asset,
     asset_check,
     job,
@@ -171,5 +175,32 @@ def good_asset_no_nulls():
     return AssetCheckResult(passed=False)
 
 
-assets = [good_asset, bad_asset]
+daily_partitions = DailyPartitionsDefinition(start_date="2026-01-01")
+region_partitions = StaticPartitionsDefinition(["eu", "us"])
+
+
+@asset(partitions_def=daily_partitions)
+def daily_table(context: AssetExecutionContext):
+    """A table that loads one day at a time, for exercising
+    dagster_asset_metadata_value on a time-window partitioned asset. The row
+    count is the number of the day, so which partition the series came from
+    can be read off the value."""
+    return MaterializeResult(metadata={"row_count": int(context.partition_key[-2:])})
+
+
+@asset(partitions_def=region_partitions)
+def regional_table(context: AssetExecutionContext):
+    """The same, for a static partitions definition."""
+    return MaterializeResult(metadata={"row_count": 100 if context.partition_key == "eu" else 200})
+
+
+@asset(
+    partitions_def=MultiPartitionsDefinition({"day": daily_partitions, "region": region_partitions})
+)
+def regional_daily_table(context: AssetExecutionContext):
+    """The same, for a multi-partition asset, whose key is "2026-01-02|eu"."""
+    return MaterializeResult(metadata={"row_count": 1})
+
+
+assets = [good_asset, bad_asset, daily_table, regional_table, regional_daily_table]
 asset_checks = [good_asset_not_empty, good_asset_no_nulls]
