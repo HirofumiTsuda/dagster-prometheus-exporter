@@ -22,6 +22,7 @@ A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's Gra
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Example: alert when a table loads 0 rows](#example-alert-when-a-table-loads-0-rows)
 - [Compatibility](#compatibility)
 - [Motivation](#motivation)
 - [Architecture](#architecture)
@@ -46,6 +47,40 @@ docker compose up --build
 | Exporter metrics | http://localhost:9101/metrics | |
 | Prometheus | http://localhost:9090 | Scrapes the exporter using `dev/prometheus/prometheus.docker.yml`. |
 | Grafana | http://localhost:3001 | Login `root` / `passw0rd` (local dev only). Dashboard "Dagster Run Monitoring" is auto-provisioned from `dev/grafana/dashboards/dagster-dashboard.json`. |
+
+## Example: alert when a table loads 0 rows
+
+A run can succeed while the data is wrong. Dagster marks the run green, and the table it loaded is empty. If the asset records the row count as metadata, this exporter turns it into a series that Prometheus can alert on.
+
+1. **Record the number in the asset.** Any `int` or `float` metadata entry works.
+
+   ```python
+   from dagster import MaterializeResult, asset
+
+   @asset
+   def orders() -> MaterializeResult:
+       rows = load_orders()
+       return MaterializeResult(metadata={"row_count": len(rows)})
+   ```
+
+2. **List the asset and the label** in the exporter. Nothing is exported until you do, so the series count stays small. With the Helm chart, set a YAML map:
+
+   ```yaml
+   assetMetadataValues:
+     orders: [row_count]
+   ```
+
+   Outside Helm, set `ASSET_METADATA_VALUES='{"orders": ["row_count"]}'`.
+
+3. **Alert on it.** The metric is `dagster_asset_metadata_value`, labeled with `asset_key`, `label` and `partition`.
+
+   ```promql
+   dagster_asset_metadata_value{asset_key="orders", label="row_count"} == 0
+   ```
+
+   The chart ships this as the `assetMetadataValueZero` alert, disabled by default. Enable it with `--set alerts.enabled=true --set alerts.rules.assetMetadataValueZero.enabled=true`.
+
+A partitioned asset gives one series, for the partition that was materialized last. See [docs/metrics.md](docs/metrics.md#dagster_asset_metadata_value-gauge) for the partition rules, what is skipped, and how to pick which assets to export.
 
 ## Compatibility
 
