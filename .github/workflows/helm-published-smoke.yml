@@ -44,7 +44,7 @@ jobs:
           sparse-checkout: .tool-versions
           sparse-checkout-cone-mode: false
 
-      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
         with:
           cluster_name: dagster-exporter-published-smoke
 
@@ -52,7 +52,7 @@ jobs:
       # development run the same one. azure/setup-helm defaults to "latest",
       # which is not reproducible and drifted a major version away from the
       # helm used for local chart testing.
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - name: Check helm is the version pinned in .tool-versions
         run: |
