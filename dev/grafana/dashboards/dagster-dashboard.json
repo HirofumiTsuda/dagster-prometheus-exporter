@@ -1102,6 +1102,50 @@
         "x": 0,
         "y": 93
       }
+    },
+    {
+      "title": "Asset Metadata Value",
+      "description": "The numeric metadata (a row count, a score) an asset recorded on its latest materialization, for the assets and labels listed in ASSET_METADATA_VALUES. A partitioned asset shows the partition that ran last, so its line changes when another partition runs. Empty until ASSET_METADATA_VALUES is set.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "dagster_asset_metadata_value",
+          "legendFormat": "{{asset_key}} {{label}} {{partition}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 101
+      }
+    },
+    {
+      "title": "Asset Metadata Age",
+      "description": "Seconds since the materialization behind the metadata values. A failed run does not move it, so it keeps growing while the values stay the same.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - dagster_asset_metadata_timestamp_seconds",
+          "legendFormat": "{{asset_key}} {{partition}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 101
+      }
     }
   ],
   "templating": {
