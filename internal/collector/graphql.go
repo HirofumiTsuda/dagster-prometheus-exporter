@@ -226,7 +226,7 @@ func doGraphQL(ctx context.Context, request *GraphQLRequest, client dagsterClien
 			return fmt.Errorf("unexpected status code: %d (redirect to %q; set DAGSTER_GRAPHQL_ENDPOINT to that URL)",
 				resp.StatusCode, resp.Header.Get("Location"))
 		}
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return &statusError{code: resp.StatusCode, body: readErrorBody(resp.Body)}
 	}
 
 	body = http.MaxBytesReader(nil, resp.Body, maxResponseBytes)
@@ -967,4 +967,32 @@ func getAssetMetadata(ctx context.Context, request *GraphQLRequest, client dagst
 	}
 
 	return &resp, nil
+}
+
+// maxErrorBodyBytes bounds how much of a non-200 response is put in the error.
+const maxErrorBodyBytes = 300
+
+// statusError is a response with a status other than 200. Dagster's own
+// failure to answer a query arrives as a 500 whose body says why, and the
+// seed tells that apart from the server being unreachable.
+type statusError struct {
+	code int
+	body string
+}
+
+func (e *statusError) Error() string {
+	if e.body == "" {
+		return fmt.Sprintf("unexpected status code: %d", e.code)
+	}
+	return fmt.Sprintf("unexpected status code: %d: %s", e.code, e.body)
+}
+
+// readErrorBody returns the start of an error response on one line, or "" when
+// it cannot be read.
+func readErrorBody(r io.Reader) string {
+	b, err := io.ReadAll(io.LimitReader(r, maxErrorBodyBytes))
+	if err != nil {
+		return ""
+	}
+	return strings.Join(strings.Fields(string(b)), " ")
 }

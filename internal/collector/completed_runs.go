@@ -229,6 +229,11 @@ func pruneLastRunStatus(c *DagsterCollector, retained map[JobKey]struct{}) {
 			delete(c.seededJobs, key)
 		}
 	}
+	for key := range c.seedSkippedJobs {
+		if _, ok := retained[key]; !ok {
+			delete(c.seedSkippedJobs, key)
+		}
+	}
 }
 
 // seedCompletedRunsCounter ensures every known job has a 0-valued series for

@@ -32,6 +32,11 @@ type seedServer struct {
 	requests        atomic.Int32
 	lastRequest     GraphQLRequest
 	fail            atomic.Bool
+	// failJobs are the jobs a request is answered with failStatus for, as
+	// Dagster does for a job whose runs it cannot serialize. The whole request
+	// fails if it names one of them, which is what makes it a problem.
+	failJobs   atomic.Pointer[map[string]bool]
+	failStatus int
 }
 
 func (s *seedServer) start(t *testing.T) string {
@@ -45,6 +50,16 @@ func (s *seedServer) start(t *testing.T) string {
 		var req GraphQLRequest
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		s.lastRequest = req
+		if bad := s.failJobs.Load(); bad != nil {
+			for _, v := range req.Variables {
+				if name, _ := v.(map[string]interface{})["pipelineName"].(string); (*bad)[name] {
+					w.WriteHeader(s.failStatus)
+					_, err := w.Write([]byte(`{"data":null,"errors":[{"message":"Param \"status\" is not a DagsterRunStatus"}]}`))
+					assert.NoError(t, err)
+					return
+				}
+			}
+		}
 		fields := make([]string, 0, len(req.Variables))
 		for name := range req.Variables {
 			runs := s.latest
@@ -214,4 +229,84 @@ func TestSeedLastRunsRetriesJobsAfterAFailedRequest(t *testing.T) {
 	s.fail.Store(false)
 	require.NoError(t, seedLastRuns(t.Context(), c))
 	assert.Equal(t, float64(100), c.lastSuccessTime[seedKey])
+}
+
+func seedJobs(n int) []JobKey {
+	jobs := make([]JobKey, n)
+	for i := range jobs {
+		jobs[i] = JobKey{JobName: fmt.Sprintf("job_%03d", i), LocationName: "loc"}
+	}
+	return jobs
+}
+
+func TestSeedLastRunsReadsTheOtherJobsWhenDagsterAnswers500ForOne(t *testing.T) {
+	buf := captureLog(t)
+	jobs := seedJobs(20)
+	s := &seedServer{success: []string{seedRun("run_a", "SUCCESS", 100, "")}, failStatus: http.StatusInternalServerError}
+	s.failJobs.Store(&map[string]bool{"job_007": true})
+	c := seedCollector(t, s.start(t), jobs...)
+
+	require.NoError(t, seedLastRuns(t.Context(), c))
+	assert.Len(t, c.seededJobs, 19, "every job but the one Dagster cannot answer for")
+	assert.NotContains(t, c.seededJobs, jobs[7])
+	assert.Contains(t, c.seedSkippedJobs, jobs[7])
+	// One request for the batch, then it is halved down to the job: about
+	// two requests per level, not one per job.
+	assert.LessOrEqual(t, s.requests.Load(), int32(1+2*5), "requests for 20 jobs, one of them bad")
+	assert.Equal(t, 1, strings.Count(buf.String(), `"job_007"`), "the log names the job once")
+	assert.Contains(t, buf.String(), "last runs of job")
+}
+
+func TestSeedLastRunsAsksForASkippedJobAloneAndLogsItOnce(t *testing.T) {
+	buf := captureLog(t)
+	jobs := seedJobs(4)
+	s := &seedServer{success: []string{seedRun("run_a", "SUCCESS", 100, "")}, failStatus: http.StatusInternalServerError}
+	s.failJobs.Store(&map[string]bool{"job_002": true})
+	c := seedCollector(t, s.start(t), jobs...)
+	require.NoError(t, seedLastRuns(t.Context(), c))
+
+	before := s.requests.Load()
+	require.NoError(t, seedLastRuns(t.Context(), c))
+	require.NoError(t, seedLastRuns(t.Context(), c))
+	assert.Equal(t, before+2, s.requests.Load(), "one request per scrape, for the skipped job only")
+	assert.Equal(t, 1, strings.Count(buf.String(), `"job_002"`), "not logged again on every scrape")
+
+	// The run that broke the answer ages out: the job is read and no longer skipped.
+	s.failJobs.Store(nil)
+	require.NoError(t, seedLastRuns(t.Context(), c))
+	assert.Contains(t, c.seededJobs, jobs[2])
+	assert.NotContains(t, c.seedSkippedJobs, jobs[2])
+	assert.Equal(t, float64(100), c.lastSuccessTime[jobs[2]])
+}
+
+func TestSeedLastRunsDoesNotSkipJobsWhenEveryJobGets500(t *testing.T) {
+	buf := captureLog(t)
+	s := &seedServer{failStatus: http.StatusInternalServerError}
+	s.fail.Store(true)
+	c := seedCollector(t, s.start(t), seedJobs(8)...)
+
+	require.Error(t, seedLastRuns(t.Context(), c))
+	assert.Empty(t, c.seedSkippedJobs, "Dagster failing as a whole is not eight bad jobs")
+	assert.NotContains(t, buf.String(), "last runs of job")
+}
+
+func TestSeedLastRunsDoesNotHalveOnABadGateway(t *testing.T) {
+	s := &seedServer{failStatus: http.StatusBadGateway}
+	s.failJobs.Store(&map[string]bool{"job_001": true})
+	c := seedCollector(t, s.start(t), seedJobs(8)...)
+
+	require.Error(t, seedLastRuns(t.Context(), c))
+	assert.Equal(t, int32(1), s.requests.Load(), "a proxy answering 502 is not one bad job")
+	assert.Empty(t, c.seedSkippedJobs)
+}
+
+func TestSeedLastRunsErrorSaysWhatDagsterAnswered(t *testing.T) {
+	s := &seedServer{failStatus: http.StatusInternalServerError}
+	s.failJobs.Store(&map[string]bool{"job_000": true})
+	c := seedCollector(t, s.start(t), seedJobs(1)...)
+
+	err := seedLastRuns(t.Context(), c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected status code: 500")
+	assert.Contains(t, err.Error(), "is not a DagsterRunStatus")
 }

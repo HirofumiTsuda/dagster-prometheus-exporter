@@ -66,8 +66,11 @@ type DagsterCollector struct {
 	lastSuccessTime          map[JobKey]float64
 	// jobRepositories is each roster job's repository name, for seedLastRuns;
 	// seededJobs holds the jobs it has already read.
-	jobRepositories         map[JobKey]string
-	seededJobs              map[JobKey]struct{}
+	jobRepositories map[JobKey]string
+	seededJobs      map[JobKey]struct{}
+	// seedSkippedJobs are the jobs Dagster answered 500 for while others were
+	// read, so each is asked for on its own and the log says so once.
+	seedSkippedJobs         map[JobKey]struct{}
 	trackedCompletedRunKeys map[JobKey]struct{}
 	lastSeenUpdateTime      float64
 	runsPageSize            int
@@ -343,6 +346,7 @@ func NewDagsterCollector(ctx context.Context, dagsterGraphQLEndpoint string, dag
 		lastRunStatus:                make(map[JobKey]lastRunEntry),
 		lastSuccessTime:              make(map[JobKey]float64),
 		seededJobs:                   make(map[JobKey]struct{}),
+		seedSkippedJobs:              make(map[JobKey]struct{}),
 		trackedCompletedRunKeys:      make(map[JobKey]struct{}),
 		runsPageSize:                 runsPageSize,
 		runsUpdatedAfterSafetyMargin: runsUpdatedAfterSafetyMargin,
