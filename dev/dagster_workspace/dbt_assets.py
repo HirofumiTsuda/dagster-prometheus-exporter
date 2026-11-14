@@ -24,9 +24,12 @@ jaffle_shop_project = DbtProject(project_dir=Path(__file__).parent.parent / "jaf
 jaffle_shop_project.prepare_if_dev()
 
 
+# fetch_row_counts() makes each table and seed record dagster/row_count (a
+# view records none), which is how a dbt asset gets a number for
+# dagster_asset_metadata_value. See "dbt assets" in docs/metrics.md.
 @dbt_assets(manifest=jaffle_shop_project.manifest_path)
 def jaffle_shop_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
-    yield from dbt.cli(["build"], context=context).stream()
+    yield from dbt.cli(["build"], context=context).stream().fetch_row_counts()
 
 
 dbt_resource = DbtCliResource(project_dir=jaffle_shop_project)

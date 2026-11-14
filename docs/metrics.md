@@ -322,13 +322,13 @@ The value is a JSON object from an asset key (the path segments joined by `/`, a
 ```yaml
 assetMetadataValues:
   orders: [row_count, accuracy]
-  dbt/customers: [row_count]
+  dbt/customers: [dagster/row_count]
 ```
 
 Outside Helm, generate it from whatever already holds the list. With Jsonnet:
 
 ```jsonnet
-std.manifestJsonMinified({ orders: ['row_count', 'accuracy'], 'dbt/customers': ['row_count'] })
+std.manifestJsonMinified({ orders: ['row_count', 'accuracy'], 'dbt/customers': ['dagster/row_count'] })
 ```
 
 An asset key with a `/` inside a segment cannot be written this way. A malformed value, an empty list or an empty label stops the exporter at startup, so a typo does not silently export nothing.
@@ -345,6 +345,27 @@ dagster_asset_metadata_value{asset_key="orders", label="row_count"} == 0
 
 The query above still works, as it does not name `partition`. Because the label changes with each partition, a graph of the value over time shows one line per partition that was ever the latest, and an alert should not match on `partition`.
 
+## dbt assets
+
+A dbt model, seed or snapshot loaded with `dagster-dbt` records three entries by default: `Execution Duration` (a float, in seconds), and `unique_id` and `invocation_id` (text, so skipped). There is no row count unless the asset asks for one, by adding `.fetch_row_counts()` to the stream:
+
+```python
+@dbt_assets(manifest=project.manifest_path)
+def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
+    yield from dbt.cli(["build"], context=context).stream().fetch_row_counts()
+```
+
+Each table and seed then records `dagster/row_count` (an int) and `dagster/storage_kind`. **A view records neither**, so there is no series for it. A label can contain a space or a `/`, as these do, and is written as it is:
+
+```yaml
+assetMetadataValues:
+  dbt/customers: [dagster/row_count, Execution Duration]
+```
+
+The asset key of the dev project's table is `customers`. A project that gives its assets a key prefix has it in front, joined with `/` (`dbt/customers` above), which was not checked here.
+
+Verified against open-source Dagster 1.13.15 and `dagster-dbt` 0.29.15 with the DuckDB adapter, on a seed, a view and a table: without `fetch_row_counts()` the table gave a series for `Execution Duration` only, and with it the table and the seed also gave `dagster/row_count`, and the view gave neither. Not checked: other adapters, and a project with a key prefix.
+
 ## What is skipped
 
 - **Text, URL, boolean and other kinds of entry.** Only `int` and `float` become series.
@@ -359,7 +380,7 @@ Labels: `asset_key`, `partition`
 
 Unix timestamp of the materialization the values of that asset were read from. A run that fails after a success leaves the last successful materialization in place, so the value stays and this timestamp stays with it. `time() - dagster_asset_metadata_timestamp_seconds` is how long the values have been stale, which `dagster_asset_last_materialization_timestamp_seconds` cannot say: that one is the end time of the latest run and moves on a failed run too.
 
-Verified against open-source Dagster 1.13.25 with an asset recording an int, a float, text, a URL, a boolean and NaN, an int of 5 billion, a daily, a static and a multi-partition asset (a new partition replaced the series, and a re-run of an old one moved it back), an asset that never ran, and an asset whose latest run failed after a success. Not checked: the metadata that dbt and other integrations record, and the cost on Dagster+.
+Verified against open-source Dagster 1.13.25 with an asset recording an int, a float, text, a URL, a boolean and NaN, an int of 5 billion, a daily, a static and a multi-partition asset (a new partition replaced the series, and a re-run of an old one moved it back), an asset that never ran, and an asset whose latest run failed after a success. Not checked: the metadata that integrations other than dbt record, and the cost on Dagster+.
 
 ## `dagster_backfills` (Gauge)
 
