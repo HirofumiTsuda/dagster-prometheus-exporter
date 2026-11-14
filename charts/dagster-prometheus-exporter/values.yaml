@@ -321,6 +321,24 @@ alerts:
       annotations:
         summary: "Dagster job {{ $labels.job_name }} hasn't succeeded recently"
         description: "Job {{ $labels.job_name }} in code location {{ $labels.location }} is launched by a schedule or sensor but hasn't finished a successful run in {{ $value | humanizeDuration }}."
+    assetMetadataValueZero:
+      # Off by default, and it needs more than enabling: nothing is exported
+      # until assetMetadataValues lists the assets and labels, and which label
+      # means "this table is empty" (row_count here) and which value is wrong
+      # (0 here) differs per asset. Set assetMetadataValues, then narrow
+      # `expr` with an asset_key matcher or change the label and the
+      # comparison, for example `< 1000` for a table that never has fewer.
+      # It does not match on `partition`, which changes with every
+      # partition (see docs/metrics.md).
+      enabled: false
+      alert: DagsterAssetMetadataValueZero
+      expr: dagster_asset_metadata_value{label="row_count"} == 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Dagster asset {{ $labels.asset_key }} recorded {{ $labels.label }} = 0"
+        description: "The latest materialization of asset {{ $labels.asset_key }} recorded {{ $labels.label }} = 0, although its run may have succeeded."
     assetStale:
       # Unlike assetMaterializationStale above, this is dependency-based
       # (Dagster's own code_version comparison against upstream), not
