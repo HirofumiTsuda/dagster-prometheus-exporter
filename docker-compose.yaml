@@ -9,7 +9,7 @@ services:
       DAGSTER_GRAPHQL_ENDPOINT: http://dagster:3000/graphql
       # The dev assets that record row_count, so the Asset Metadata panels have
       # series. Nothing is exported until this is set.
-      ASSET_METADATA_VALUES: '{"good_asset":["row_count"],"daily_table":["row_count"],"regional_table":["row_count"],"regional_daily_table":["row_count"]}'
+      ASSET_METADATA_VALUES: '{"good_asset":["row_count"],"daily_table":["row_count"],"regional_table":["row_count"],"regional_daily_table":["row_count"],"customers":["dagster/row_count"]}'
 
   dagster:
     build:
