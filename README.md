@@ -80,6 +80,8 @@ A run can succeed while the data is wrong. Dagster marks the run green, and the 
 
    The chart ships this as the `assetMetadataValueZero` alert, disabled by default. Enable it with `--set alerts.enabled=true --set alerts.rules.assetMetadataValueZero.enabled=true`.
 
+The same works for a model's accuracy or the tokens an LLM asset used: see [ML and LLM pipelines](docs/metrics.md#ml-and-llm-pipelines).
+
 A partitioned asset gives one series, for the partition that was materialized last. See [docs/metrics.md](docs/metrics.md#dagster_asset_metadata_value-gauge) for the partition rules, what is skipped, and how to pick which assets to export.
 
 ## Compatibility
