@@ -15,7 +15,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/HirofumiTsuda/dagster-prometheus-exporter.svg)](https://pkg.go.dev/github.com/HirofumiTsuda/dagster-prometheus-exporter)
 [![License: MIT](https://img.shields.io/github/license/HirofumiTsuda/dagster-prometheus-exporter)](LICENSE)
 
-A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, asset staleness and materialization status, run-queue backlog, op pool concurrency, and code-location load errors as Prometheus metrics. It works with both OSS Dagster and [Dagster+](#dagster) (with an API token).
+A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, asset staleness and materialization status, run-queue backlog, op pool concurrency, and code-location load errors as Prometheus metrics. It can also export the numbers an asset records, so a run that succeeds with bad results can alert too: a table that loaded 0 rows, a model whose accuracy dropped, an LLM asset that used far more tokens than usual. It works with both OSS Dagster and [Dagster+](#dagster) (with an API token).
 
 ![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
 
@@ -23,6 +23,7 @@ A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's Gra
 
 - [Quick Start](#quick-start)
 - [Example: alert when a table loads 0 rows](#example-alert-when-a-table-loads-0-rows)
+- [Example: alert when a model gets worse](#example-alert-when-a-model-gets-worse)
 - [Compatibility](#compatibility)
 - [Motivation](#motivation)
 - [Architecture](#architecture)
@@ -80,9 +81,30 @@ A run can succeed while the data is wrong. Dagster marks the run green, and the 
 
    The chart ships this as the `assetMetadataValueZero` alert, disabled by default. Enable it with `--set alerts.enabled=true --set alerts.rules.assetMetadataValueZero.enabled=true`.
 
-The same works for a model's accuracy or the tokens an LLM asset used: see [ML and LLM pipelines](docs/metrics.md#ml-and-llm-pipelines).
-
 A partitioned asset gives one series, for the partition that was materialized last. See [docs/metrics.md](docs/metrics.md#dagster_asset_metadata_value-gauge) for the partition rules, what is skipped, and how to pick which assets to export.
+
+## Example: alert when a model gets worse
+
+The same works for ML. A training asset that records its accuracy, as Dagster's own `project_ml` example does with `final_val_accuracy`, can alert when a training run succeeds but the model got worse:
+
+```yaml
+assetMetadataValues:
+  digit_classifier: [final_val_accuracy]
+```
+
+```promql
+dagster_asset_metadata_value{asset_key="digit_classifier", label="final_val_accuracy"} < 90
+```
+
+Three trainings of `project_ml`, the second at a learning rate far too low. Grafana shows the accuracy dropping below 90 and coming back:
+
+![Grafana panel of final_val_accuracy over three trainings: 98.2, then 27.6 below the red area under 90, then 97.3](docs/images/ml-accuracy-grafana.png)
+
+and the rule above reaches Alertmanager with the asset and the label it is about:
+
+![Alertmanager with ModelAccuracyLow firing, labeled asset_key="digit_classifier" and label="final_val_accuracy"](docs/images/ml-accuracy-alertmanager.png)
+
+The tokens an LLM asset used work the same way (`dagster-anthropic` and `dagster-openai` record them). See [ML and LLM pipelines](docs/metrics.md#ml-and-llm-pipelines) for the labels, how this was checked, and what it does not do: the value is the latest run's, so there are no totals.
 
 ## Compatibility
 
