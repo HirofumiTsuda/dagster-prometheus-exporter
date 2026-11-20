@@ -396,9 +396,15 @@ dagster_asset_metadata_value{asset_key="digit_classifier", label="final_val_accu
 time() - dagster_asset_metadata_timestamp_seconds{asset_key="digit_classifier"} > 7 * 86400
 ```
 
-![final_val_accuracy over three training runs of project_ml: 97.8, then 19.5 with the alert firing below the threshold of 90, then 97.7](images/ml-accuracy-alert.png)
+In Grafana, three trainings of `project_ml` (learning rate `1e-3`, then `1e-6`, then `1e-3`): 98.2, then 27.6, then 97.3. The red area is below the threshold of 90.
 
-The figure is real data: `project_ml` trained three times for one epoch (learning rate `1e-3`, then `1e-6`, then `1e-3`), `dagster_asset_metadata_value` read from Prometheus, and the state of the `< 90` rule from its `ALERTS` series. The alert starts about 15 seconds after the value drops, which is the scrape interval and the `for: 10s` of that test.
+![Grafana panel of final_val_accuracy over three trainings: 98.2, then 27.6 below the red threshold area under 90, then 97.3](images/ml-accuracy-grafana.png)
+
+While the value is below 90, the `< 90` rule above fires and reaches Alertmanager with the asset and the label it is about:
+
+![Alertmanager with ModelAccuracyLow firing, labeled asset_key="digit_classifier" and label="final_val_accuracy"](images/ml-accuracy-alertmanager.png)
+
+Both are screenshots of that run: the exporter, Prometheus with the rule (`for: 10s`), Alertmanager and Grafana. The panel is a time series of the query above, with a threshold step at 90.
 
 The project's asset checks (the data is complete, the weights are finite, the accuracy is reasonable) are in `dagster_asset_check_status` with the `asset_checks` collector, so a failed check can be the quality gate and the alert.
 
