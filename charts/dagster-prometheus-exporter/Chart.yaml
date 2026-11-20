@@ -2,12 +2,12 @@ apiVersion: v2
 name: dagster-prometheus-exporter
 description: A Prometheus exporter for Dagster run metrics
 type: application
-version: 0.1.15
+version: 0.1.16
 # Must exactly match a real tag on ghcr.io/hirofumitsuda/dagster-prometheus-exporter
 # (no "v" prefix — docker/metadata-action's {{version}} pattern in
 # docker-publish.yml strips it from the git tag when publishing), since
 # templates/deployment.yaml defaults image.tag to this value.
-appVersion: "0.10.0"
+appVersion: "0.11.0"
 home: https://github.com/HirofumiTsuda/dagster-prometheus-exporter
 sources:
   - https://github.com/HirofumiTsuda/dagster-prometheus-exporter
@@ -36,6 +36,8 @@ annotations:
       url: https://raw.githubusercontent.com/HirofumiTsuda/dagster-prometheus-exporter/main/docs/images/grafana-dashboard.png
   artifacthub.io/changes: |
     - kind: changed
-      description: "jobLastRunFailed no longer fires forever for a job nobody runs any more: it keeps firing until the job succeeds only while a schedule or sensor still launches it (dagster_job_automation_running == 1), and for 24 hours after the failure otherwise. A failed job that no schedule or sensor launches now stops alerting 24 hours after its failure. Needs exporter 0.10.0 or newer, the chart's default image."
+      description: "The default image is exporter 0.11.0 (from 0.10.0). It runs two new collectors by default, asset_checks and backfills, so it sends two more GraphQL queries to Dagster on every scrape interval. If asset_checks is slow on a deployment with many assets, set env.ASSET_CHECKS_SCRAPING_INTERVAL_SECONDS to a longer interval."
     - kind: added
-      description: "jobNoRecentSuccess (DagsterJobNoRecentSuccess): an automated job that has not finished a successful run in 26 hours. Ships disabled, since jobs run at different cadences; set the threshold in alerts.rules.jobNoRecentSuccess.expr before enabling it."
+      description: "assetMetadataValues: a YAML map from an asset key to the metadata labels to export on dagster_asset_metadata_value, for example orders: [row_count]. Rendered as the JSON that ASSET_METADATA_VALUES takes. Empty, the default, exports nothing."
+    - kind: added
+      description: "assetMetadataValueZero (DagsterAssetMetadataValueZero): an asset recorded row_count = 0. Ships disabled: list the assets in assetMetadataValues first, then enable it and narrow expr to your assets."
