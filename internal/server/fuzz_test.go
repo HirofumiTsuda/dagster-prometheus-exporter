@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,11 +25,25 @@ import (
 // fills the state, and pruning, the last-run undo and the seed read run on top
 // of it.
 //
+// The collectors run one after the other, on the test's goroutine: a panic in
+// a goroutine would kill the fuzzing worker with no stack trace and no input
+// worth saving.
+//
 // Under go test it replays the seeds below and anything saved in
 // testdata/fuzz. To look for new failures, run it for a while:
 //
-//	go test ./internal/server -run '^$' -fuzz FuzzScrapeResponses -fuzztime 60s
-func FuzzScrapeResponses(f *testing.F) {
+//	go test ./internal/server -run '^$' -fuzz '^FuzzScrapeResponses$' -fuzztime 60s
+func FuzzScrapeResponses(f *testing.F) { fuzzScrapeResponses(f, false) }
+
+// FuzzScrapeResponsesConcurrent is the same with the collectors running in
+// goroutines, as the exporter runs them, so the race detector and a deadlock
+// see them against arbitrary bodies. A crash has no stack trace here, so
+// reproduce one with FuzzScrapeResponses first.
+//
+//	go test -race ./internal/server -run '^$' -fuzz '^FuzzScrapeResponsesConcurrent$' -fuzztime 60s
+func FuzzScrapeResponsesConcurrent(f *testing.F) { fuzzScrapeResponses(f, true) }
+
+func fuzzScrapeResponses(f *testing.F, concurrent bool) {
 	const (
 		roster = `{"data":{"repositoriesOrError":{"__typename":"RepositoryConnection","nodes":[{"name":"repo","location":{"name":"loc"},` +
 			`"jobs":[{"name":"job_a","tags":[{"key":"owner","value":"team"}]}],` +
@@ -51,23 +67,33 @@ func FuzzScrapeResponses(f *testing.F) {
 	f.Add(`{"data":{"repositoriesOrError":{"__typename":"RepositoryConnection","nodes":[{"name":"","location":{"name":""},"jobs":[{"name":""}],"schedules":null,"sensors":null}]}}}`, runs, other)
 	f.Add(roster, `{"data":{"runsOrError":{"__typename":"Runs","results":[{"runId":"a","jobName":"job_a","status":"SUCCESS","creationTime":-1,"updateTime":1e30,"endTime":-5,"tags":null}]}}}`, other)
 
+	// One server for the whole run, not one per input. A fuzz worker runs
+	// thousands of inputs a second and every input opens a connection for each
+	// collector. With a new server each time, TCP connects stalled after a few
+	// seconds, every collector waiting in connect() while the server waited in
+	// accept(), until the coordinator killed the worker as hung (#280). The
+	// collectors were not at fault: the same targets run for minutes on one server.
+	var bodies atomic.Pointer[[3]string]
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query, _ := io.ReadAll(r.Body)
+		b := bodies.Load()
+		body := b[2]
+		switch {
+		case strings.Contains(string(query), "repositoriesOrError"):
+			body = b[0]
+		case strings.Contains(string(query), "runsOrError"):
+			body = b[1]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	f.Cleanup(ts.Close)
+
 	log.SetOutput(io.Discard)
 	f.Cleanup(func() { log.SetOutput(io.Discard) })
 
 	f.Fuzz(func(t *testing.T, rosterBody, runsBody, otherBody string) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			query, _ := io.ReadAll(r.Body)
-			body := otherBody
-			switch {
-			case strings.Contains(string(query), "repositoriesOrError"):
-				body = rosterBody
-			case strings.Contains(string(query), "runsOrError"):
-				body = runsBody
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(body))
-		}))
-		defer ts.Close()
+		bodies.Store(&[3]string{rosterBody, runsBody, otherBody})
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -75,14 +101,22 @@ func FuzzScrapeResponses(f *testing.F) {
 		c.SeedScrapeHealth(config.ActiveCollectorNames(true))
 		c.SetJobTagLabels(map[string]string{"owner": "tag_owner"})
 
-		// One after the other, on the test's goroutine: a panic in a goroutine of
-		// scrapeDagster would kill the fuzzing worker with no stack trace and
-		// no input worth saving. Running them concurrently is the race
-		// detector's job.
 		for range 2 {
-			for _, name := range config.ActiveCollectorNames(true) {
-				scrapeOne(ctx, c, name)
+			if !concurrent {
+				for _, name := range config.ActiveCollectorNames(true) {
+					scrapeOne(ctx, c, name)
+				}
+				continue
 			}
+			var wg sync.WaitGroup
+			for _, name := range config.ActiveCollectorNames(true) {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					scrapeOne(ctx, c, name)
+				}()
+			}
+			wg.Wait()
 		}
 
 		reg := prometheus.NewPedanticRegistry()
