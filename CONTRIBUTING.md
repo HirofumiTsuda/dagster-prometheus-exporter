@@ -49,6 +49,14 @@ dev/chart-alert-tests/run.sh
 
 It renders the rules with every rule enabled and runs [`dev/chart-alert-tests/alerts_test.yml`](dev/chart-alert-tests/alerts_test.yml) with `promtool test rules`. Each rule needs a case where it fires and one where it does not, and a rule that matches two series with `on(...)` needs a case with two entities in one location, so a looser match fails. The script fails for a rule with no test. A test also checks the annotations, so when you change a rule's wording, run it once and copy the `got` annotations from its output.
 
+For a change to the Grafana dashboard, edit `dev/grafana/dashboards/dagster-dashboard.json` (keep it `jq`-formatted), then regenerate the grafana.com copy and commit both:
+
+```sh
+dev/grafana/build-grafana-com-dashboard.sh
+```
+
+CI runs it with `--check` and fails when `docs/dagster-dashboard.grafana-com.json` is out of date. Never edit that file by hand.
+
 ## Local development stack
 
 `docker compose up --build` brings up a full stack — a `dagster dev` instance with sample jobs, this exporter, Prometheus, and Grafana — so you can test changes against a real Dagster instance. See [Quick Start](README.md#quick-start) in the README for details.
