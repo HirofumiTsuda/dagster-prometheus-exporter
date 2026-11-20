@@ -17,7 +17,7 @@
 
 A Prometheus exporter for [Dagster](https://dagster.io/). It polls Dagster's GraphQL API on an interval and exposes run counts, statuses and durations, schedule and sensor state, asset staleness and materialization status, run-queue backlog, op pool concurrency, and code-location load errors as Prometheus metrics. It can also export the numbers an asset records, so a run that succeeds with bad results can alert too: a table that loaded 0 rows, a model whose accuracy dropped, an LLM asset that used far more tokens than usual. It works with both OSS Dagster and [Dagster+](#dagster) (with an API token).
 
-![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard.png)
+![Dagster Run Monitoring dashboard in Grafana](docs/images/grafana-dashboard-all-panels.png)
 
 ## Table of Contents
 
