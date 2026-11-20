@@ -17,3 +17,4 @@
 # deliberately rather than by drift.
 golangci-lint 2.12.2
 helm 4.2.4
+promtool 3.15.1

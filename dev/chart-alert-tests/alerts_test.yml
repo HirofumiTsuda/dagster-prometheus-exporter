@@ -1,0 +1,540 @@
+# Unit tests for the chart's alert rules, run by run.sh with `promtool test rules`.
+# Each rule has a case where it fires and one where it must not.
+# Series are 1m apart. A value of `0+60x2880` is the elapsed seconds, so `time() - value` is 0 (a timestamp that keeps up).
+rule_files:
+  - rules.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m  # daemonHeartbeatStale fires when the heartbeat is older than 2 minutes
+    input_series:
+      - series: 'dagster_daemon_last_heartbeat_timestamp_seconds{daemon_type="SCHEDULER"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterDaemonHeartbeatStale
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              daemon_type: "SCHEDULER"
+              severity: "critical"
+            exp_annotations:
+              description: "The SCHEDULER daemon hasn't reported a heartbeat in over 2 minutes (20m 0s since the last one). Schedules, sensors, and queued runs may be stalled."
+              summary: "Dagster daemon SCHEDULER heartbeat is stale"
+  - interval: 1m  # daemonHeartbeatStale stays quiet while the heartbeat is fresh
+    input_series:
+      - series: 'dagster_daemon_last_heartbeat_timestamp_seconds{daemon_type="SCHEDULER"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - alertname: DagsterDaemonHeartbeatStale
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # jobLastRunFailed fires for a failed job that a schedule or sensor still launches, however old the failure
+    input_series:
+      - series: 'dagster_last_run_info{job_name="j",location="loc",status="failure"}'
+        values: '1x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '1x2880'
+      - series: 'dagster_last_run_end_timestamp_seconds{job_name="j",location="loc",status="failure"}'
+        values: '0x2880'
+    alert_rule_test:
+      - alertname: DagsterJobLastRunFailed
+        eval_time: 2d
+        exp_alerts:
+          - exp_labels:
+              job_name: "j"
+              location: "loc"
+              severity: "warning"
+              status: "failure"
+            exp_annotations:
+              description: "The most recent completed run of job j in code location loc failed (its last attempt, if Dagster retried it)."
+              summary: "Dagster job j last run failed"
+  - interval: 1m  # jobLastRunFailed fires for a job nobody launches while the failure is under 24 hours old
+    input_series:
+      - series: 'dagster_last_run_info{job_name="j",location="loc",status="failure"}'
+        values: '1x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_last_run_end_timestamp_seconds{job_name="j",location="loc",status="failure"}'
+        values: '0+60x2880'
+    alert_rule_test:
+      - alertname: DagsterJobLastRunFailed
+        eval_time: 2d
+        exp_alerts:
+          - exp_labels:
+              job_name: "j"
+              location: "loc"
+              severity: "warning"
+              status: "failure"
+            exp_annotations:
+              description: "The most recent completed run of job j in code location loc failed (its last attempt, if Dagster retried it)."
+              summary: "Dagster job j last run failed"
+  - interval: 1m  # jobLastRunFailed stops for a job nobody launches once the failure is over 24 hours old
+    input_series:
+      - series: 'dagster_last_run_info{job_name="j",location="loc",status="failure"}'
+        values: '1x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_last_run_end_timestamp_seconds{job_name="j",location="loc",status="failure"}'
+        values: '0x2880'
+    alert_rule_test:
+      - alertname: DagsterJobLastRunFailed
+        eval_time: 2d
+        exp_alerts: []
+  - interval: 1m  # jobLastRunFailed stays quiet when the last run succeeded
+    input_series:
+      - series: 'dagster_last_run_info{job_name="j",location="loc",status="success"}'
+        values: '1x20'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterJobLastRunFailed
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # assetMaterializationFailed fires when the last materialization failed
+    input_series:
+      - series: 'dagster_asset_last_materialization_status{asset_key="a",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterAssetMaterializationFailed
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              asset_key: "a"
+              severity: "warning"
+              status: "failure"
+            exp_annotations:
+              description: "The most recent materializing run for asset a failed."
+              summary: "Dagster asset a failed to materialize"
+  - interval: 1m  # assetMaterializationFailed stays quiet when it succeeded
+    input_series:
+      - series: 'dagster_asset_last_materialization_status{asset_key="a",status="success"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterAssetMaterializationFailed
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # runStuckInQueue fires when the oldest queued run has waited over 10 minutes
+    input_series:
+      - series: 'dagster_active_run_duration_seconds{job_name="j",location="loc",status="queued"}'
+        values: '601x20'
+    alert_rule_test:
+      - alertname: DagsterRunStuckInQueue
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              job_name: "j"
+              location: "loc"
+              severity: "warning"
+              status: "queued"
+            exp_annotations:
+              description: "Job j in code location loc has had a run sitting queued for 10m 1s."
+              summary: "Dagster job j has a run stuck in the queue"
+  - interval: 1m  # runStuckInQueue stays quiet for a short wait
+    input_series:
+      - series: 'dagster_active_run_duration_seconds{job_name="j",location="loc",status="queued"}'
+        values: '500x20'
+    alert_rule_test:
+      - alertname: DagsterRunStuckInQueue
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # runQueueConcurrencyKeyBacklog fires while runs wait on a key
+    input_series:
+      - series: 'dagster_run_queue_concurrency_key_backlog{concurrency_key="k"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterRunQueueConcurrencyKeyBacklog
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              concurrency_key: "k"
+              severity: "warning"
+            exp_annotations:
+              description: "Concurrency key k has had at least one run queued behind its tag-based limit for over 15 minutes (1 currently backlogged), suggesting the limit may be undersized for current load."
+              summary: "Dagster concurrency key k has a sustained run backlog"
+  - interval: 1m  # runQueueConcurrencyKeyBacklog stays quiet at zero
+    input_series:
+      - series: 'dagster_run_queue_concurrency_key_backlog{concurrency_key="k"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterRunQueueConcurrencyKeyBacklog
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # opPoolConcurrencyPendingSteps fires while steps wait on a pool slot
+    input_series:
+      - series: 'dagster_op_pool_concurrency_pending_steps{pool="p"}'
+        values: '2x20'
+    alert_rule_test:
+      - alertname: DagsterOpPoolConcurrencyPendingSteps
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              pool: "p"
+              severity: "warning"
+            exp_annotations:
+              description: "Pool p has had at least one step waiting for a slot for over 15 minutes (2 currently pending), suggesting the pool's limit may be undersized for current load."
+              summary: "Dagster op/step pool p has steps stuck pending"
+  - interval: 1m  # opPoolConcurrencyPendingSteps stays quiet at zero
+    input_series:
+      - series: 'dagster_op_pool_concurrency_pending_steps{pool="p"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterOpPoolConcurrencyPendingSteps
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # scheduleNotSucceeding fires for a running schedule whose last tick failed
+    input_series:
+      - series: 'dagster_schedule_status{schedule_name="s",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_schedule_last_tick_status{schedule_name="s",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterScheduleNotSucceeding
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              location: "loc"
+              schedule_name: "s"
+              severity: "warning"
+              status: "running"
+            exp_annotations:
+              description: "Schedule s in code location loc is turned on and its most recent tick failed."
+              summary: "Dagster schedule s is failing"
+  - interval: 1m  # scheduleNotSucceeding stays quiet for a stopped schedule
+    input_series:
+      - series: 'dagster_schedule_status{schedule_name="s",location="loc",status="stopped"}'
+        values: '1x20'
+      - series: 'dagster_schedule_last_tick_status{schedule_name="s",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterScheduleNotSucceeding
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # scheduleNotSucceeding stays quiet when the last tick was only skipped
+    input_series:
+      - series: 'dagster_schedule_status{schedule_name="s",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_schedule_last_tick_status{schedule_name="s",location="loc",status="skipped"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterScheduleNotSucceeding
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickFailing fires for a running sensor whose last tick failed
+    input_series:
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_status{sensor_name="s",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickFailing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              location: "loc"
+              sensor_name: "s"
+              severity: "warning"
+              status: "running"
+            exp_annotations:
+              description: "Sensor s in code location loc is turned on and its most recent tick raised an error (this excludes the common \"skipped\" outcome)."
+              summary: "Dagster sensor s is failing"
+  - interval: 1m  # sensorTickFailing stays quiet for a stopped sensor
+    input_series:
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="stopped"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_status{sensor_name="s",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickFailing
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickFailing stays quiet when the last tick was skipped, which is normal for a sensor
+    input_series:
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_status{sensor_name="s",location="loc",status="skipped"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickFailing
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickStale fires for a running sensor that has not ticked for over 5 minutes
+    input_series:
+      - series: 'dagster_sensor_last_tick_timestamp_seconds{sensor_name="s",location="loc"}'
+        values: '0x20'
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="running"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickStale
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              location: "loc"
+              sensor_name: "s"
+              severity: "warning"
+            exp_annotations:
+              description: "Sensor s in code location loc is turned on but hasn't ticked in 20m 0s, suggesting a stalled evaluation loop."
+              summary: "Dagster sensor s stopped ticking"
+  - interval: 1m  # sensorTickStale stays quiet for a stopped sensor
+    input_series:
+      - series: 'dagster_sensor_last_tick_timestamp_seconds{sensor_name="s",location="loc"}'
+        values: '0x20'
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="stopped"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickStale
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickStale stays quiet for a sensor that keeps ticking
+    input_series:
+      - series: 'dagster_sensor_last_tick_timestamp_seconds{sensor_name="s",location="loc"}'
+        values: '0+60x20'
+      - series: 'dagster_sensor_status{sensor_name="s",location="loc",status="running"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickStale
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # assetMaterializationStale fires for an asset not materialized for over a day
+    input_series:
+      - series: 'dagster_asset_last_materialization_timestamp_seconds{asset_key="a"}'
+        values: '0x2880'
+    alert_rule_test:
+      - alertname: DagsterAssetMaterializationStale
+        eval_time: 2d
+        exp_alerts:
+          - exp_labels:
+              asset_key: "a"
+              severity: "warning"
+            exp_annotations:
+              description: "Asset a hasn't been materialized in over 2d 0h 0m 0s."
+              summary: "Dagster asset a hasn't been materialized recently"
+  - interval: 1m  # assetMaterializationStale stays quiet for a recently materialized asset
+    input_series:
+      - series: 'dagster_asset_last_materialization_timestamp_seconds{asset_key="a"}'
+        values: '0+60x2880'
+    alert_rule_test:
+      - alertname: DagsterAssetMaterializationStale
+        eval_time: 2d
+        exp_alerts: []
+  - interval: 1m  # jobNoRecentSuccess fires for an automated job with no success in over 26 hours
+    input_series:
+      - series: 'dagster_last_success_timestamp_seconds{job_name="j",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '1x2880'
+    alert_rule_test:
+      - alertname: DagsterJobNoRecentSuccess
+        eval_time: 2d
+        exp_alerts:
+          - exp_labels:
+              job_name: "j"
+              location: "loc"
+              severity: "warning"
+            exp_annotations:
+              description: "Job j in code location loc is launched by a schedule or sensor but hasn't finished a successful run in 2d 0h 0m 0s."
+              summary: "Dagster job j hasn't succeeded recently"
+  - interval: 1m  # jobNoRecentSuccess stays quiet for a job that no schedule or sensor launches
+    input_series:
+      - series: 'dagster_last_success_timestamp_seconds{job_name="j",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '0x2880'
+    alert_rule_test:
+      - alertname: DagsterJobNoRecentSuccess
+        eval_time: 2d
+        exp_alerts: []
+  - interval: 1m  # jobNoRecentSuccess stays quiet for a job that keeps succeeding
+    input_series:
+      - series: 'dagster_last_success_timestamp_seconds{job_name="j",location="loc"}'
+        values: '0+60x2880'
+      - series: 'dagster_job_automation_running{job_name="j",location="loc"}'
+        values: '1x2880'
+    alert_rule_test:
+      - alertname: DagsterJobNoRecentSuccess
+        eval_time: 2d
+        exp_alerts: []
+  - interval: 1m  # assetMetadataValueZero fires when row_count is 0, whatever the partition
+    input_series:
+      - series: 'dagster_asset_metadata_value{asset_key="orders",label="row_count",partition="2026-01-02"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterAssetMetadataValueZero
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              asset_key: "orders"
+              label: "row_count"
+              partition: "2026-01-02"
+              severity: "warning"
+            exp_annotations:
+              description: "The latest materialization of asset orders recorded row_count = 0, although its run may have succeeded."
+              summary: "Dagster asset orders recorded row_count = 0"
+  - interval: 1m  # assetMetadataValueZero stays quiet for a non-zero row_count or another label
+    input_series:
+      - series: 'dagster_asset_metadata_value{asset_key="orders",label="row_count",partition=""}'
+        values: '500x20'
+      - series: 'dagster_asset_metadata_value{asset_key="orders",label="accuracy",partition=""}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterAssetMetadataValueZero
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # assetStale fires for a stale asset
+    input_series:
+      - series: 'dagster_asset_stale_status{asset_key="a",status="stale"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterAssetStale
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              asset_key: "a"
+              severity: "warning"
+              status: "stale"
+            exp_annotations:
+              description: "Asset a hasn't been rematerialized since an upstream dependency changed, based on Dagster's own code_version comparison (not elapsed time)."
+              summary: "Dagster asset a is stale relative to its upstream"
+  - interval: 1m  # assetStale stays quiet for a fresh asset
+    input_series:
+      - series: 'dagster_asset_stale_status{asset_key="a",status="fresh"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterAssetStale
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # codeLocationLoadError fires when a code location fails to load
+    input_series:
+      - series: 'dagster_code_location_load_error{location="loc"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterCodeLocationLoadError
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              location: "loc"
+              severity: "warning"
+            exp_annotations:
+              description: "Code location loc has been failing to load for over 10 minutes -- jobs, schedules, and sensors defined there can't run. Check the webserver/daemon logs for the load error."
+              summary: "Dagster code location loc failed to load"
+  - interval: 1m  # codeLocationLoadError stays quiet for a location that loads
+    input_series:
+      - series: 'dagster_code_location_load_error{location="loc"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterCodeLocationLoadError
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # exporterScrapeFailing fires when a collector's last scrape failed
+    input_series:
+      - series: 'dagster_exporter_last_scrape_success{collector="asset_status"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: DagsterExporterScrapeFailing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              collector: "asset_status"
+              severity: "warning"
+            exp_annotations:
+              description: "The asset_status collector has been failing to scrape Dagster's GraphQL API for over 10 minutes -- other Dagster alerts may be based on stale data until this recovers."
+              summary: "dagster-prometheus-exporter collector asset_status is failing"
+  - interval: 1m  # exporterScrapeFailing stays quiet when the scrape succeeded
+    input_series:
+      - series: 'dagster_exporter_last_scrape_success{collector="asset_status"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterExporterScrapeFailing
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # exporterDown fires when the exporter's own series are gone
+    input_series:
+      - series: 'some_other_metric'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterExporterDown
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: "critical"
+            exp_annotations:
+              description: "No dagster_exporter_build_info series has been scraped for over 5 minutes. The exporter is down or Prometheus cannot reach it, so every other Dagster alert is blind until it is back."
+              summary: "dagster-prometheus-exporter is not reporting"
+  - interval: 1m  # exporterDown stays quiet while the exporter reports
+    input_series:
+      - series: 'dagster_exporter_build_info{version="1"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterExporterDown
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # jobLastRunFailed does not match a failed job to another job's automation in the same location
+    input_series:
+      - series: 'dagster_last_run_info{job_name="a",location="loc",status="failure"}'
+        values: '1x2880'
+      - series: 'dagster_job_automation_running{job_name="a",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_last_run_end_timestamp_seconds{job_name="a",location="loc",status="failure"}'
+        values: '0x2880'
+      - series: 'dagster_last_run_info{job_name="b",location="loc",status="success"}'
+        values: '1x2880'
+      - series: 'dagster_job_automation_running{job_name="b",location="loc"}'
+        values: '1x2880'
+    alert_rule_test:
+      - alertname: DagsterJobLastRunFailed
+        eval_time: 2d
+        exp_alerts: []
+  - interval: 1m  # scheduleNotSucceeding does not match a running schedule to another schedule's failed tick
+    input_series:
+      - series: 'dagster_schedule_status{schedule_name="a",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_schedule_last_tick_status{schedule_name="a",location="loc",status="success"}'
+        values: '1x20'
+      - series: 'dagster_schedule_status{schedule_name="b",location="loc",status="stopped"}'
+        values: '1x20'
+      - series: 'dagster_schedule_last_tick_status{schedule_name="b",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterScheduleNotSucceeding
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickFailing does not match a running sensor to another sensor's failed tick
+    input_series:
+      - series: 'dagster_sensor_status{sensor_name="a",location="loc",status="running"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_status{sensor_name="a",location="loc",status="success"}'
+        values: '1x20'
+      - series: 'dagster_sensor_status{sensor_name="b",location="loc",status="stopped"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_status{sensor_name="b",location="loc",status="failure"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickFailing
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # sensorTickStale does not match a stale stopped sensor to another sensor that is running
+    input_series:
+      - series: 'dagster_sensor_last_tick_timestamp_seconds{sensor_name="a",location="loc"}'
+        values: '0x20'
+      - series: 'dagster_sensor_status{sensor_name="a",location="loc",status="stopped"}'
+        values: '1x20'
+      - series: 'dagster_sensor_last_tick_timestamp_seconds{sensor_name="b",location="loc"}'
+        values: '0+60x20'
+      - series: 'dagster_sensor_status{sensor_name="b",location="loc",status="running"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: DagsterSensorTickStale
+        eval_time: 20m
+        exp_alerts: []
+  - interval: 1m  # jobNoRecentSuccess does not match a stale job to another job's automation in the same location
+    input_series:
+      - series: 'dagster_last_success_timestamp_seconds{job_name="a",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_job_automation_running{job_name="a",location="loc"}'
+        values: '0x2880'
+      - series: 'dagster_last_success_timestamp_seconds{job_name="b",location="loc"}'
+        values: '0+60x2880'
+      - series: 'dagster_job_automation_running{job_name="b",location="loc"}'
+        values: '1x2880'
+    alert_rule_test:
+      - alertname: DagsterJobNoRecentSuccess
+        eval_time: 2d
+        exp_alerts: []
