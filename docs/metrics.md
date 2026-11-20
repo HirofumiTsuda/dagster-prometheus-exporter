@@ -366,6 +366,73 @@ The asset key of the dev project's table is `customers`. A project that gives it
 
 Verified against open-source Dagster 1.13.15 and `dagster-dbt` 0.29.15 with the DuckDB adapter, on a seed, a view and a table: without `fetch_row_counts()` the table gave a series for `Execution Duration` only, and with it the table and the seed also gave `dagster/row_count`, and the view gave neither. Not checked: other adapters, and a project with a key prefix.
 
+## ML and LLM pipelines
+
+The values an asset records on its latest materialization fit the pipeline side of ML and LLM work: a training asset that records its accuracy, or an asset that calls an LLM and records the tokens it used. A run can succeed while the model got worse or a prompt got ten times longer, and these are the numbers that show it.
+
+### A model's accuracy
+
+Dagster's own `project_ml` example (`examples/docs_projects/project_ml` in `dagster-io/dagster`, a CNN on MNIST) records these on its `digit_classifier` asset:
+
+| Label | Kind | Exported |
+| --- | --- | --- |
+| `final_val_accuracy`, `final_train_loss`, `learning_rate` | float | yes |
+| `training_epochs`, `configured_epochs`, `model_parameters`, `batch_size` | int | yes |
+| `optimizer`, `model_name` | text | no, text is skipped |
+| `early_stopping_used` | bool | no, booleans are skipped |
+
+`final_val_accuracy` is a percentage (98.3), not a fraction. List what to watch:
+
+```yaml
+assetMetadataValues:
+  digit_classifier: [final_val_accuracy, final_train_loss, training_epochs]
+```
+
+An alert on a drop, and on a model that has not been retrained:
+
+```promql
+dagster_asset_metadata_value{asset_key="digit_classifier", label="final_val_accuracy"} < 90
+
+time() - dagster_asset_metadata_timestamp_seconds{asset_key="digit_classifier"} > 7 * 86400
+```
+
+![final_val_accuracy over three training runs of project_ml: 97.8, then 19.5 with the alert firing below the threshold of 90, then 97.7](images/ml-accuracy-alert.png)
+
+The figure is real data: `project_ml` trained three times for one epoch (learning rate `1e-3`, then `1e-6`, then `1e-3`), `dagster_asset_metadata_value` read from Prometheus, and the state of the `< 90` rule from its `ALERTS` series. The alert starts about 15 seconds after the value drops, which is the scrape interval and the `for: 10s` of that test.
+
+The project's asset checks (the data is complete, the weights are finite, the accuracy is reasonable) are in `dagster_asset_check_status` with the `asset_checks` collector, so a failed check can be the quality gate and the alert.
+
+### Tokens an LLM asset used
+
+`dagster-anthropic` and `dagster-openai` record usage on the asset that calls the API. The keys, read in the source and seen on a running Dagster:
+
+| Integration | Labels |
+| --- | --- |
+| `dagster-anthropic` | `anthropic.calls`, `anthropic.input_tokens`, `anthropic.output_tokens`, `anthropic.cache_creation_input_tokens`, `anthropic.cache_read_input_tokens` |
+| `dagster-openai` | `openai.<model>.calls`, `.total_tokens`, `.prompt_tokens`, `.completion_tokens`, with the model name in the key, for example `openai.gpt-4o-mini.total_tokens` |
+
+Within one run the counters add up over the calls: two calls of 1200 input tokens record `anthropic.input_tokens` as 2400. The labels have dots in them, which work as they are written, in the variable and in the chart value. OpenAI has one set of labels per model, so list each model the asset can use:
+
+```yaml
+assetMetadataValues:
+  summarize_docs: [anthropic.input_tokens, anthropic.output_tokens]
+  classify_tickets: [openai.gpt-4o-mini.total_tokens, openai.gpt-4o.total_tokens]
+```
+
+```promql
+dagster_asset_metadata_value{asset_key="summarize_docs", label="anthropic.input_tokens"} > 500000
+```
+
+The integrations record usage only inside an asset (not an op), and only for synchronous calls.
+
+### What this does not do
+
+- **There are no totals.** The value is the latest run's and the next run replaces it, so tokens or cost per day or month cannot be summed. That is for the provider's usage API or Dagster+ Insights. This exporter can say that one run used far more than the last.
+- **Serving and LLM traces are not here.** Latency, drift and the prediction distribution of a served model, and per-request traces, answers and prompts of an LLM, are outside Dagster. For traces see [`dagster-otel`](https://github.com/HirofumiTsuda/dagster-otel).
+- **Text is not exported**, such as a model's name or version. See #273.
+
+Verified on open-source Dagster 1.13.15. `project_ml` (at `dagster-io/dagster` commit `d567b25`, CPU `torch`) was trained for 2 epochs: `final_val_accuracy` 98.3 and the other numbers reached `dagster_asset_metadata_value`, text and boolean entries did not, and its seven checks were `succeeded` in `dagster_asset_check_status`. A second training for 1 epoch at a learning rate of `1e-6` gave 15.7, and the `< 90` rule above went `firing` in a real Prometheus. The token labels were checked with `dagster-anthropic` 0.0.6 and `dagster-openai` 0.29.15 on mocked clients. Not checked: real API calls, asynchronous calls, Dagster+, and the cost of listing many assets.
+
 ## What is skipped
 
 - **Text, URL, boolean and other kinds of entry.** Only `int` and `float` become series.
