@@ -43,6 +43,9 @@ jobs:
               - .github/workflows/ci.yml
             grafana:
               - "dev/grafana/dashboards/**.json"
+              # The grafana.com copy is generated from the dev dashboard.
+              - docs/dagster-dashboard.grafana-com.json
+              - dev/grafana/build-grafana-com-dashboard.sh
               - .github/workflows/ci.yml
 
   test:
@@ -119,7 +122,13 @@ jobs:
 
       - name: Check dashboard JSON is valid and jq-formatted
         run: |
-          for f in dev/grafana/dashboards/*.json; do
+          for f in dev/grafana/dashboards/*.json docs/dagster-dashboard.grafana-com.json; do
             jq empty "$f"
             diff <(jq . "$f") "$f"
           done
+
+      # The grafana.com copy is built from the dev dashboard, so a panel is
+      # changed in one place. A stale copy would be published as it is by
+      # grafana-dashboard.yml.
+      - name: Check the grafana.com dashboard is up to date with the dev one
+        run: dev/grafana/build-grafana-com-dashboard.sh --check

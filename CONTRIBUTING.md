@@ -41,6 +41,14 @@ helm lint --strict charts/dagster-prometheus-exporter
 helm template charts/dagster-prometheus-exporter
 ```
 
+For a change to the Grafana dashboard, edit `dev/grafana/dashboards/dagster-dashboard.json` (keep it `jq`-formatted), then regenerate the grafana.com copy and commit both:
+
+```sh
+dev/grafana/build-grafana-com-dashboard.sh
+```
+
+CI runs it with `--check` and fails when `docs/dagster-dashboard.grafana-com.json` is out of date. Never edit that file by hand.
+
 ## Local development stack
 
 `docker compose up --build` brings up a full stack — a `dagster dev` instance with sample jobs, this exporter, Prometheus, and Grafana — so you can test changes against a real Dagster instance. See [Quick Start](README.md#quick-start) in the README for details.
